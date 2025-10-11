@@ -36,43 +36,42 @@ def newton_raphson_solver(f, x0, tol=1e-10, max_iter=30, h=1e-6):
         for i in range(max_iter):
             fx = f(x_val)
             if abs(fx) < tol:
-                return x_val
+                return x_val, True, i, abs(fx)
 
             # Approximate derivative f'(x)
             f_prime = (f(x_val + h) - fx) / h
             if abs(f_prime) < 1e-14:
-                raise RuntimeError("Derivative is close to zero. Cannot solve.")
+                return x_val, False, i, abs(fx)
 
             # Update solution
             x_val -= fx / f_prime
 
-        raise RuntimeError(f"Solver did not converge within {max_iter} iterations. "
-                           f"Final value of F(X) is {abs(f(x_val))}.")
+        return x_val, False, max_iter, abs(f(x_val))
     else:
-        # Handle multi-variable case (original logic)
+        # Handle multi-variable case
         n = len(x)
         for i in range(max_iter):
-            fx = f(x)
-            norm_fx = np.linalg.norm(fx)
+            r = f(x)
+            nr = np.linalg.norm(r)
 
-            if norm_fx < tol:
-                return x
+            if nr < tol:
+                return x, True, i, nr
 
             # Approximate Jacobian using forward finite differences
             J = np.zeros((n, n))
             for j in range(n):
-                x_plus_h = x.copy()
-                x_plus_h[j] += h
-                J[:, j] = (f(x_plus_h) - fx) / h
+                xj = x.copy()
+                xj[j] += h
+                J[:, j] = (f(xj) - r) / h
 
-            # Solve the linear system J * delta_x = -fx
+            # Solve the linear system J * dx = -r with damping and lstsq fallback
             try:
-                delta_x = np.linalg.solve(J, -fx)
+                dx = np.linalg.solve(J + 1e-12 * np.eye(n), -r)
             except np.linalg.LinAlgError:
-                raise RuntimeError("Singular Jacobian matrix encountered. Cannot solve.")
+                dx = np.linalg.lstsq(J, -r, rcond=None)[0]
 
             # Update solution
-            x += delta_x
+            x += dx
 
-        raise RuntimeError(f"Solver did not converge within {max_iter} iterations. "
-                           f"Final norm of F(X) is {np.linalg.norm(f(x))}.")
+        # Return failure if convergence is not achieved
+        return x, False, max_iter, np.linalg.norm(f(x))

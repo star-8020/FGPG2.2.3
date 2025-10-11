@@ -7,14 +7,68 @@ from .involute import involute_polar_angle
 def _inv(phi):
     return np.tan(phi) - phi
 
+def involute_tangent(rb, phi, eps=1e-6):
+    """Computes the tangent to an involute curve at a given roll angle."""
+    r0 = rb * np.sqrt(1 + np.tan(phi)**2)
+    p0 = np.array([r0 * np.cos(phi), r0 * np.sin(phi)])
+
+    phi_plus_eps = phi + eps
+    r1 = rb * np.sqrt(1 + np.tan(phi_plus_eps)**2)
+    p1 = np.array([r1 * np.cos(phi_plus_eps), r1 * np.sin(phi_plus_eps)])
+
+    t = p1 - p0
+    return t / np.linalg.norm(t)
+
+def residuals(x, tool_params):
+    """
+    Computes the residuals for the Newton-Raphson solver based on geometric constraints.
+    """
+    rS0, lamS0, thP, thE = x
+    a, b = tool_params['a'], tool_params['b']
+    rb0, da0 = tool_params['rb0'], tool_params['da0']
+
+    S0 = np.array([rS0 * np.cos(lamS0), rS0 * np.sin(lamS0)])
+
+    # Elliptical tip geometry
+    XP = S0 + np.array([a * np.cos(thP), b * np.sin(thP)])
+    XE = S0 + np.array([a * np.cos(thE), b * np.sin(thE)])
+
+    TP = np.array([-a * np.sin(thP), b * np.cos(thP)])
+    TE = np.array([-a * np.sin(thE), b * np.cos(thE)])
+    TP /= np.linalg.norm(TP)
+    TE /= np.linalg.norm(TE)
+
+    # OD contact and tangency
+    rE = np.linalg.norm(XE)
+    rhatE = XE / rE
+    F2 = rE - da0 / 2.0
+    F3 = np.dot(TE, rhatE)
+
+    # Involute tangency
+    try:
+        phi_arg = (np.linalg.norm(XP) / rb0)**2 - 1.0
+        if phi_arg < 0:
+            phi_arg = 0
+        phi = np.sqrt(phi_arg)
+        tinv = involute_tangent(rb0, phi)
+        F1 = TP[0] * tinv[1] - TP[1] * tinv[0]
+    except (ValueError, FloatingPointError):
+        F1 = 1e6  # Penalize invalid states
+
+    # Geometric closure
+    F4 = np.linalg.norm(XP - S0) - np.linalg.norm([a * np.cos(thP), b * np.sin(thP)])
+
+    return np.array([F1, F2, F3, F4])
+
 def compute_shaper_root_fillet(gear, tool, opts):
     # 1. Parameter Extraction and Conversion
-    Pnd, n, phi_n_deg, psi_deg, sn = gear['Pnd'], gear['n'], gear['φn'], gear['ψ'], gear['sn']
+    Pnd, n, phi_n_deg, psi_deg, sn = gear['Pnd'], gear['n'], gear['phi_n'], gear['psi'], gear['sn']
     phi_n = np.radians(phi_n_deg)
     psi = np.radians(psi_deg)
 
     Pnd0, n0, phi_n0_deg, psi0_deg = tool['Pnd0'], tool['n0'], tool['phi_n0_deg'], tool['psi0_deg']
     sn0, da0, rho0, delta0 = tool['sn0'], tool['da0'], tool['rho0'], tool['delta0']
+    a, b = tool['a'], tool['b']
     phi_n0 = np.radians(phi_n0_deg)
     psi0 = np.radians(psi0_deg)
 
@@ -32,46 +86,44 @@ def compute_shaper_root_fillet(gear, tool, opts):
 
     C = r + r0
 
-    def f_phi_op(phi_op):
-        s_t = sn / np.cos(psi)
-        s_t0 = sn0 / np.cos(psi0)
-        p_t = np.pi / Pnd
-        return _inv(phi_t) + (s_t + s_t0 - p_t) / (2 * C) - _inv(phi_op)
+    # 3. Newton-Raphson Solver for Elliptical Tip Contact
+    tool_params = {'a': a, 'b': b, 'rb0': rb0, 'da0': da0}
 
-    phi_op = newton_raphson_solver(f_phi_op, phi_t, tol=1e-9, max_iter=20)
+    x0 = np.array([r0 - rho0, 0.0, -phi_t0, -1.5])
 
-    # 3. Cutter Tip Geometry
-    r_s0 = da0 / 2 - rho0
-    alpha_e0 = involute_polar_angle(da0 / 2, rb0)
-    theta_s0 = (sn0 / (2 * r0)) + _inv(phi_t0) - alpha_e0
-    xs0 = r_s0 * np.cos(theta_s0)
-    ys0 = r_s0 * np.sin(theta_s0)
+    x, converged, iters, nrm = newton_raphson_solver(lambda x: residuals(x, tool_params), x0, tol=1e-9)
+    if not converged:
+        raise RuntimeError(f"Newton solver failed to converge for shaper fillet. Norm: {nrm}")
+
+    rS0, lamS0, thP, thE = x
+    S0 = np.array([rS0 * np.cos(lamS0), rS0 * np.sin(lamS0)])
 
     # 4. Trochoid Generation
-    u_start = -np.pi/2 - theta_s0
-    u_end = np.pi/2 - theta_s0
-    u_values = np.linspace(u_start, u_end, int(np.pi*rho0/ds))
-
-    xp0 = xs0 + rho0 * np.cos(u_values)
-    yp0 = ys0 + rho0 * np.sin(u_values)
+    u_values = np.linspace(thP, thE, int(np.pi * (a + b) / 2 / ds))
+    xp0 = S0[0] + a * np.cos(u_values)
+    yp0 = S0[1] + b * np.sin(u_values)
 
     rp0 = np.sqrt(xp0**2 + yp0**2)
     thetap0 = np.arctan2(yp0, xp0)
 
-    # Kinematic relationship for meshing
+    phi_op, converged, _, _ = newton_raphson_solver(
+        lambda pop: _inv(phi_t) + (sn / np.cos(psi) + sn0 / np.cos(psi0) - np.pi / Pnd) / (2 * C) - _inv(pop),
+        phi_t, tol=1e-9, max_iter=20
+    )
+    if not converged:
+        raise RuntimeError("Failed to converge for operating pressure angle.")
+
     with np.errstate(divide='ignore', invalid='ignore'):
         xi0_term2_val = (rb0/rp0)**2 - (C*np.cos(phi_op)/rp0 * np.sin(thetap0))**2
         xi0_term2_val[xi0_term2_val < 0] = 0
         xi0_term2 = np.sqrt(xi0_term2_val)
 
     xi0 = (C * np.cos(phi_op) - rb0) / rp0 * np.cos(thetap0) - xi0_term2
-
     valid_indices = ~np.isnan(xi0)
     xi0, xp0, yp0 = xi0[valid_indices], xp0[valid_indices], yp0[valid_indices]
 
     xi = -(n0 / n) * xi0
 
-    # Transformation to the gear's coordinate system (O frame) using standard kinematics.
     xw = C + xp0 * np.cos(xi0) - yp0 * np.sin(xi0)
     yw = xp0 * np.sin(xi0) + yp0 * np.cos(xi0)
 

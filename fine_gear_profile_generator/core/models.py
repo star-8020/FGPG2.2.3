@@ -83,6 +83,8 @@ class ShaperCutterParameters:
     da0: float
     rho0: float
     delta0: float
+    a: float = 0.0  # Major semi-axis of the elliptical tip
+    b: float = 0.0  # Minor semi-axis of the elliptical tip
 
 
 @dataclass

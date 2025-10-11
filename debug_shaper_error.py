@@ -44,7 +44,9 @@ def run_debug():
             sn0=shaper_defaults.get('sn0'),
             da0=shaper_defaults.get('da0'),
             rho0=shaper_defaults.get('rho0'),
-            delta0=shaper_defaults.get('delta0')
+            delta0=shaper_defaults.get('delta0'),
+            a=shaper_defaults.get('a'),
+            b=shaper_defaults.get('b')
         )
 
         # 2. Assemble the main parameters object, forcing the shaper method

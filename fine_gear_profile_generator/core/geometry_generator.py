@@ -158,11 +158,11 @@ def generate_tooth_profile(
         assert sn_inch < 2, "Expected normal tooth thickness in inches; check unit conversions."
 
         gear_dict = {
-            'Pnd': 25.4 / params.module, # Conversion from module (mm) to Pnd (in^-1)
+            'Pnd': 25.4 / params.module,
             'n': teeth_calc,
-            'φn': params.pressure_angle_deg,
-            'ψ': 0, # Assuming spur gear
-            'sn': sn_inch, # Normal thickness for spur gear (inches)
+            'phi_n': params.pressure_angle_deg,
+            'psi': 0,
+            'sn': sn_inch,
         }
         tool_dict = params.shaper_cutter.__dict__
         opts_dict = {'tol': 1e-10, 'max_iter': 30, 'ds': 0.001}
