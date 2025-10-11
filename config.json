@@ -34,6 +34,9 @@
     "sn0": 0.13,
     "da0": 9.23,
     "rho0": 0.01,
-    "delta0": 0.0025
+    "delta0": 0.0025,
+    "ellipse_a": 0.012,
+    "ellipse_b": 0.009,
+    "ellipse_orientation_deg": 5.0
   }
 }

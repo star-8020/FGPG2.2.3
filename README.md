@@ -40,10 +40,18 @@ To enable the shaper-cutter algorithm, modify the `config.json` file in the proj
         "sn0": 0.13,
         "da0": 9.23,
         "rho0": 0.01,
-        "delta0": 0.0025
+        "delta0": 0.0025,
+        "ellipse_a": 0.012,
+        "ellipse_b": 0.009,
+        "ellipse_orientation_deg": 5.0
       }
     }
     ```
+
+    The `delta0` parameter now directly offsets the cutter center when solving the tool placement. Increasing `delta0` pushes t
+    he cutter outward, enlarging the resulting fillet and Start-of-Involute (SOI) diameter as described in Lian's protuberance f
+    ormulation. The new `ellipse_a`, `ellipse_b`, and `ellipse_orientation_deg` fields define the semi-axes and in-plane orienta
+    tion of the shaper tip ellipse, enabling Newton-based solutions for non-circular cutter tips.
 
 ---
 

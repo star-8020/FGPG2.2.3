@@ -136,6 +136,9 @@ def get_default_gear_pair_parameters(config_data: Dict[str, object] | None = Non
             da0=float(shaper_defaults.get('da0', 9.23)),
             rho0=float(shaper_defaults.get('rho0', 0.01)),
             delta0=float(shaper_defaults.get('delta0', 0.0025)),
+            ellipse_a=float(shaper_defaults.get('ellipse_a', 0.01)),
+            ellipse_b=float(shaper_defaults.get('ellipse_b', 0.01)),
+            ellipse_orientation_deg=float(shaper_defaults.get('ellipse_orientation_deg', 0.0)),
         )
 
     return GearPairParameters(

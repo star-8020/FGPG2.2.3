@@ -251,7 +251,10 @@ class GearApp(tk.Tk):
                     sn0=shaper_defaults.get('sn0'),
                     da0=shaper_defaults.get('da0'),
                     rho0=shaper_defaults.get('rho0'),
-                    delta0=shaper_defaults.get('delta0')
+                    delta0=shaper_defaults.get('delta0'),
+                    ellipse_a=shaper_defaults.get('ellipse_a'),
+                    ellipse_b=shaper_defaults.get('ellipse_b'),
+                    ellipse_orientation_deg=shaper_defaults.get('ellipse_orientation_deg'),
                 )
 
             params = GearPairParameters(

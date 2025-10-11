@@ -75,6 +75,7 @@ class SegmentationSettings:
 @dataclass
 class ShaperCutterParameters:
     """Parameters for the shaper cutter tool, based on Lian (2006)."""
+
     Pnd0: float
     n0: int
     phi_n0_deg: float
@@ -83,6 +84,9 @@ class ShaperCutterParameters:
     da0: float
     rho0: float
     delta0: float
+    ellipse_a: float
+    ellipse_b: float
+    ellipse_orientation_deg: float
 
 
 @dataclass
