@@ -69,6 +69,11 @@ def compute_shaper_root_fillet(gear, tool, opts):
     Pnd0, n0, phi_n0_deg, psi0_deg = tool['Pnd0'], tool['n0'], tool['phi_n0_deg'], tool['psi0_deg']
     sn0, da0, rho0, delta0 = tool['sn0'], tool['da0'], tool['rho0'], tool['delta0']
     a, b = tool['a'], tool['b']
+    if a <= 0 or b <= 0:
+        raise ValueError(
+            "Elliptical cutter semi-axes 'a' and 'b' must be positive. "
+            f"Current values: a={a}, b={b}"
+        )
     phi_n0 = np.radians(phi_n0_deg)
     psi0 = np.radians(psi0_deg)
 
