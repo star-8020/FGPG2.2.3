@@ -1,0 +1,5 @@
+ezdxf
+numpy
+matplotlib
+Pillow
+scipy
