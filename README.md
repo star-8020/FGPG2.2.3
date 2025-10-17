@@ -1,99 +1,117 @@
-# FGPG 2.2.1
 # Fine Gear Profile Generator (FGPG)
 
-### 🧭 Overview
-This version of FGPG introduces a major new feature: the **Shaper-Cutter Root Fillet Algorithm**. Based on the analytical work of George Lian (2006), this advanced modeling capability replaces the traditional rack-based trochoid approximation with a realistic gear–gear conjugate model. This allows for the generation of gear profiles with higher precision and improved structural reliability, especially at the tooth root.
+## 🧭 Overview
 
-This feature is implemented as an optional setting, allowing users to choose between the classic rack generation method and the new shaper-based algorithm.
+The Fine Gear Profile Generator (FGPG) is a Python-based tool for generating high-precision 2D profiles of spur and internal gears. It provides a flexible and powerful engine for calculating gear geometry, including the involute tooth flanks and the critical root fillet curve.
 
----
+This project features:
+-   A user-friendly GUI built with Tkinter.
+-   A core engine for generating gear tooth profiles based on standard gear parameters.
+-   Two methods for root fillet generation:
+    -   **Rack Trochoid:** A classic and widely-used method that simulates a rack-shaped cutter.
+    -   **Shaper Trochoid:** An advanced method that simulates a gear-like shaper cutter, providing more realistic geometry for certain manufacturing processes.
+-   Export capabilities for both DXF (for CAD applications) and PNG (for visual previews).
+-   A headless mode for running generations from the command line.
+-   A modular structure that separates the core logic, GUI, and I/O operations.
 
-### ⚙️ How to Use the Shaper-Cutter Fillet Option
+## 🚀 Getting Started
 
-To enable the shaper-cutter algorithm, modify the `config.json` file in the project's root directory.
+### Prerequisites
 
-1.  **Set the fillet method:**
-    In the `defaults` section, set the `root_fillet_method` property to `"shaper_trochoid"`.
-
-    ```json
-    {
-      "defaults": {
-        "root_fillet_method": "shaper_trochoid",
-        ...
-      }
-    }
-    ```
-    The available options are:
-    - `"rack_trochoid"`: The classic method using a rack cutter approximation (default).
-    - `"shaper_trochoid"`: The new, more accurate method using a shaper cutter model.
-
-2.  **Configure the shaper cutter tool (optional):**
-    You can customize the parameters of the virtual shaper cutter tool by editing the `shaper_cutter_defaults` section in `config.json`.
-
-    ```json
-    {
-      "shaper_cutter_defaults": {
-        "Pnd0": 12,
-        "n0": 1000,
-        "phi_n0_deg": 20.0,
-        "psi0_deg": 22.1,
-        "sn0": 0.13,
-        "da0": 9.23,
-        "rho0": 0.01,
-        "delta0": 0.0025
-      }
-    }
+-   Python 3.6+
+-   The required Python packages can be installed via `pip`:
+    ```bash
+    pip install numpy scipy ezdxf matplotlib Pillow
     ```
 
----
+### Running the Application
 
-### 🧩 Core Implementation
-The new algorithm is implemented in the following core modules:
+There are two ways to run the Fine Gear Profile Generator:
+
+**1. GUI Mode (Recommended)**
+
+To launch the graphical user interface, run the `main.py` script as a module from the project's root directory:
+
+```bash
+python -m fine_gear_profile_generator.main
 ```
-/fine_gear_profile_generator/core/
-  ├── shaper_fillet.py  # Main shaper-cutter trochoid algorithm
-  ├── newton.py         # Multi-variable Newton-Raphson solver
-  ├── involute.py       # Involute curve utilities
-  ├── geometry_generator.py # Integrates the new method
-  └── ...
+
+This will open the main application window, where you can input gear parameters, generate profiles, and save the results.
+
+**2. Headless Mode**
+
+For automated workflows or running in environments without a graphical display, you can use the headless mode. This will generate a gear pair using the default parameters specified in `config.json` and save the output files to the default working directory.
+
+```bash
+python -m fine_gear_profile_generator.main --headless
 ```
 
----
+## ⚙️ Configuration
 
-### 🧮 Algorithm Workflow
-1.  **Configuration:** The application reads the `root_fillet_method` from `config.json`.
-2.  **Parameter Calculation:** It computes the base geometry for the gear and, if selected, the shaper tool.
-3.  **Fillet Generation:**
-    - If `shaper_trochoid` is selected, `shaper_fillet.py` solves the non-linear system for the cutter tip and traces its path to generate the root trochoid.
-    - Otherwise, the classic rack-based trochoid is generated.
-4.  **SOI Detection:** The Start of Involute (SOI) is calculated by finding the intersection of the fillet and the involute profile.
-5.  **Profile Assembly:** The final gear profile is assembled and exported.
+The application's default settings can be customized through the `config.json` file located in the project's root directory.
 
----
+### Main Defaults
 
-### 📈 Validation
-The algorithm's accuracy is validated by observing its convergence towards the traditional hobbed trochoid as the shaper cutter's number of teeth approaches infinity.
+The `defaults` section contains the primary parameters for the gear generation:
 
-| Cutter Teeth | Max Fillet Deviation (vs. Rack) | SOI Difference (vs. Rack) |
-|--------------|---------------------------------|---------------------------|
-| 100          | 0.001901 in                     | 0.0102 in                 |
-| 1000         | 0.000111 in                     | 0.0011 in                 |
-| 10000        | 0.000011 in                     | 0.0001 in                 |
+```json
+{
+  "defaults": {
+    "module_m": 1.0,
+    "teeth_number_z": 18,
+    "pressure_angle_alpha": 20.0,
+    "offset_factor_x": 0.2,
+    "backlash_factor_b": 0.05,
+    "root_fillet_method": "rack_trochoid",
+    ...
+  }
+}
+```
 
-These results confirm that the shaper-based model is a correct generalization of the rack-based limit.
+### Root Fillet Method
 
----
+You can choose between two algorithms for generating the root fillet by setting the `root_fillet_method` property:
+-   `"rack_trochoid"`: The classic method using a rack cutter approximation (default).
+-   `"shaper_trochoid"`: A more advanced method that simulates a shaper cutter, which can produce more accurate root geometry.
 
-### 💡 Benefits
-- **Realistic Geometry:** Simulates true gear–gear contact instead of a rack approximation.
-- **Improved Strength:** Produces a smoother root curvature, leading to better stress distribution.
-- **Advanced Control:** Allows direct control over protuberance and tool-tip radius.
-- **FEA-Ready:** Generates high-fidelity profiles suitable for CAE/FEA analysis.
+### Shaper Cutter Parameters
 
----
+If you select the `"shaper_trochoid"` method, you can also configure the parameters of the virtual shaper cutter tool in the `shaper_cutter_defaults` section:
 
-### 📚 Reference
-Lian, G. (2006). *Determining the Shaper Cut Helical Gear Fillet Profile.* Gear Technology, Sep/Oct 2006.
+```json
+{
+  "shaper_cutter_defaults": {
+    "Pnd0": 12,
+    "n0": 1000,
+    "phi_n0_deg": 20.0,
+    ...
+  }
+}
+```
+
+## 📁 Project Structure
+
+The project is organized into several key directories:
+
+-   `fine_gear_profile_generator/`: The main package directory.
+    -   `core/`: Contains the core logic for gear calculations, including geometry generation, mathematical functions, and data models.
+    -   `gui/`: Contains the Tkinter-based graphical user interface.
+    -   `io/`: Contains modules for exporting the generated profiles to DXF and image files.
+    -   `utils/`: Contains utility functions, such as the configuration manager.
+    -   `tests/`: Contains unit and integration tests for the various components of the application.
+-   `debug_shaper_error.py`: A script for debugging the shaper fillet generation without the GUI.
+-   `config.json`: The main configuration file for default parameters.
+-   `README.md`: This file.
+
+## 🧪 Running Tests
+
+The project includes a suite of tests to ensure the correctness of the calculations and the stability of the application. To run the tests, you can use Python's built-in `unittest` module from the project's root directory:
+
+```bash
+python -m unittest discover fine_gear_profile_generator/tests
+```
+
+This will automatically discover and run all the tests in the `tests` directory.
 
 ---
 

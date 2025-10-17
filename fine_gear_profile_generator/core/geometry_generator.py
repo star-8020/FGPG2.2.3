@@ -20,7 +20,23 @@ def involute_curve(
     base_angle: float,
     start_angle: float,
 ) -> List[Tuple[float, float]]:
-    """Generate the involute flank curve."""
+    """Generate the involute flank curve of a gear tooth.
+
+    This function calculates the coordinates for the involute portion of a gear
+    tooth profile, which is the primary load-bearing surface.
+
+    Args:
+        module: The module of the gear.
+        teeth: The number of teeth.
+        segment_count: The number of points to generate for the curve.
+        theta_start: The starting angular parameter for the involute generation.
+        theta_end: The ending angular parameter for the involute generation.
+        base_angle: The base pressure angle in radians.
+        start_angle: The overall starting angle for the tooth geometry.
+
+    Returns:
+        A list of (x, y) tuples representing the vertices of the involute curve.
+    """
     theta_values = np.linspace(theta_start, theta_end, segment_count)
     radius = 0.5 * module * teeth * np.cos(base_angle) * np.sqrt(1 + theta_values**2)
     x_coords = radius * np.cos(start_angle + theta_values - np.arctan(theta_values))
@@ -38,7 +54,25 @@ def edge_round_curve(
     edge_center_y: float,
     segment_count: int,
 ) -> List[Tuple[float, float]]:
-    """Generate the rounded edge curve at the tooth tip."""
+    """Generate the rounded edge curve at the tooth tip.
+
+    This function creates a small, rounded corner at the tip of the tooth,
+    connecting the involute flank to the outer addendum circle. This can
+    help to reduce stress concentrations.
+
+    Args:
+        module: The module of the gear.
+        tooth_edge_radius: The radius of the rounded edge.
+        flank_vertices: The vertices of the involute flank.
+        edge_x: The x-coordinate of the outer edge point.
+        edge_y: The y-coordinate of the outer edge point.
+        edge_center_x: The x-coordinate of the center of the edge radius.
+        edge_center_y: The y-coordinate of the center of the edge radius.
+        segment_count: The number of points to generate for the curve.
+
+    Returns:
+        A list of (x, y) tuples for the rounded edge curve.
+    """
     last_flank_vertex = flank_vertices[-1]
     theta_min = np.arctan2(last_flank_vertex[1] - edge_center_y, last_flank_vertex[0] - edge_center_x)
     theta_max = np.arctan2(edge_y - edge_center_y, edge_x - edge_center_x)
@@ -58,7 +92,25 @@ def rack_trochoid_root_curve(
     alpha_transition: float,
     segment_count: int,
 ) -> List[Tuple[float, float]]:
-    """Generate the trochoidal root fillet curve based on a rack cutter."""
+    """Generate the trochoidal root fillet curve based on a rack cutter.
+
+    This function simulates the path of the corner of a rack-shaped cutting
+    tool (a hob) to generate the root fillet of the gear tooth. This is a common
+    method for modeling gear tooth roots.
+
+    Args:
+        module: The module of the gear.
+        teeth: The number of teeth.
+        profile_shift: The profile shift coefficient.
+        dedendum_factor: The dedendum factor.
+        hob_edge_radius: The radius of the hob cutter's edge.
+        theta_end: The ending angular parameter for the trochoid generation.
+        alpha_transition: The transition angle for the trochoid generation.
+        segment_count: The number of points to generate for the curve.
+
+    Returns:
+        A list of (x, y) tuples for the trochoidal root curve.
+    """
     theta_values = np.linspace(0, theta_end, segment_count)
     denominator = module * (dedendum_factor - profile_shift - hob_edge_radius)
     if hob_edge_radius != 0 and denominator == 0:
@@ -83,7 +135,22 @@ def rack_trochoid_root_curve(
 def outer_arc(
     module: float, teeth: int, profile_shift: float, addendum_factor: float, edge_angle: float, mid_angle: float
 ) -> Arc:
-    """Generate the outer arc at the tooth tip (addendum circle)."""
+    """Generate the outer arc at the tooth tip (addendum circle).
+
+    This function defines the circular arc that forms the top land of the gear
+    tooth, which is part of the addendum circle.
+
+    Args:
+        module: The module of the gear.
+        teeth: The number of teeth.
+        profile_shift: The profile shift coefficient.
+        addendum_factor: The addendum factor.
+        edge_angle: The starting angle of the arc.
+        mid_angle: The ending angle of the arc.
+
+    Returns:
+        An ``Arc`` object representing the outer arc of the tooth.
+    """
     radius = module * (teeth / 2 + addendum_factor + profile_shift)
     return Arc(center=(0, 0), radius=radius, start_angle=edge_angle, end_angle=mid_angle)
 
@@ -91,7 +158,21 @@ def outer_arc(
 def root_arc(
     module: float, teeth: int, profile_shift: float, dedendum_factor: float, transition_angle: float
 ) -> Arc:
-    """Generate the root arc at the bottom of the tooth space (dedendum circle)."""
+    """Generate the root arc at the bottom of the tooth space (dedendum circle).
+
+    This function defines the circular arc that forms the bottom land of the
+    tooth space, which is part of the dedendum circle.
+
+    Args:
+        module: The module of the gear.
+        teeth: The number of teeth.
+        profile_shift: The profile shift coefficient.
+        dedendum_factor: The dedendum factor.
+        transition_angle: The ending angle of the arc.
+
+    Returns:
+        An ``Arc`` object representing the root arc of the tooth space.
+    """
     radius = module * (teeth / 2 - dedendum_factor + profile_shift)
     return Arc(center=(0, 0), radius=radius, start_angle=0, end_angle=transition_angle)
 
@@ -102,8 +183,27 @@ def generate_tooth_profile(
     Tuple[np.ndarray, np.ndarray, float, float, float],
     Tuple[StructuredToothProfile, float, float, float, str],
 ]:
-    """Generate a single gear tooth profile with associated metadata."""
+    """Generate a single gear tooth profile with associated metadata.
 
+    This is the main function for generating the complete profile of a single
+    gear tooth. It orchestrates the creation of all the geometric components:
+    the involute flanks, the root fillet, the edge rounds, and the top/bottom
+    arcs. It also handles different fillet generation methods and corrects for
+    undercutting if necessary.
+
+    Args:
+        params: A ``GearPairParameters`` object containing all the necessary
+            parameters for the gear pair.
+        gear_type: A string indicating whether to generate the 'driver' or
+            'driven' gear profile.
+        use_structured_output: If True, returns a ``StructuredToothProfile``
+            object; otherwise, returns raw vertex data (deprecated).
+
+    Returns:
+        A tuple containing the generated tooth profile and associated metadata.
+        The profile can be either a ``StructuredToothProfile`` or raw vertices,
+        depending on the ``use_structured_output`` flag.
+    """
     gear_spec = params.driver if gear_type == 'driver' else params.driven
 
     (teeth_calc, shift_calc, backlash_calc, addendum_calc, dedendum_calc,

@@ -6,9 +6,13 @@ from fine_gear_profile_generator.core import geometry_generator, models
 from fine_gear_profile_generator.io import dxf_exporter
 
 class TestDxfOutput(unittest.TestCase):
+    """Test suite for verifying the DXF export functionality.
 
+    This class contains tests that ensure the DXF exporter can successfully
+    generate a DXF file for a given gear pair geometry without errors.
+    """
     def setUp(self):
-        """Set up parameters and a temporary directory for test files."""
+        """Set up a temporary directory and default gear parameters for tests."""
         self.temp_dir = "temp_test_output"
         os.makedirs(self.temp_dir, exist_ok=True)
 
@@ -31,14 +35,15 @@ class TestDxfOutput(unittest.TestCase):
         )
 
     def tearDown(self):
-        """Remove the temporary directory and its contents after the test."""
+        """Remove the temporary directory and its contents after each test."""
         if os.path.exists(self.temp_dir):
             shutil.rmtree(self.temp_dir)
 
     def test_dxf_file_is_created(self):
-        """
-        Tests that the DXF exporter function runs and creates a non-empty file
-        at the expected location.
+        """Test that a DXF file is created and is not empty.
+
+        This test runs the full pipeline from geometry generation to DXF export
+        and verifies that the output file is created as expected and contains data.
         """
         # Generate the geometry for both gears
         g1_profile, g1_teeth, g1_pitch, g1_align, g1_status = geometry_generator.generate_tooth_profile(

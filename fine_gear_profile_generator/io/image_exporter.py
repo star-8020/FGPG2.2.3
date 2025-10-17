@@ -16,7 +16,18 @@ ARC_PLOT_SEGMENTS = 20
 
 
 def _structured_profile_to_polyline(profile: StructuredToothProfile) -> Tuple[np.ndarray, np.ndarray]:
-    """Convert a structured tooth profile into a single, continuous polyline for plotting."""
+    """Convert a structured tooth profile into a single, continuous polyline.
+
+    This helper function takes a ``StructuredToothProfile`` and converts its
+    constituent arcs and splines into a single sequence of x and y coordinates,
+    suitable for plotting with libraries like Matplotlib.
+
+    Args:
+        profile: The structured tooth profile to convert.
+
+    Returns:
+        A tuple of two NumPy arrays: the x and y coordinates of the polyline.
+    """
     all_x, all_y = [], []
 
     # The elements are already in a continuous order, so we just concatenate them.
@@ -51,8 +62,23 @@ def export_gear_pair_to_image(
     x_offset: float = 0.0,
     y_offset: float = 0.0,
 ) -> None:
-    """Generate and save a PNG preview for the supplied gear pair."""
+    """Generate and save a PNG preview for the supplied gear pair.
 
+    This function uses Matplotlib to create a 2D plot of the meshing gear
+    pair and saves it as a PNG image. It handles the positioning and rotation
+    of each tooth for both gears to create a complete visual representation.
+
+    Args:
+        working_dir: The directory where the image file will be saved.
+        gear1: The geometric data for the first gear (driver).
+        gear2: The geometric data for the second gear (driven).
+        center_dist: The center distance between the two gears.
+        module_value: The module of the gears.
+        gear1_teeth: The number of teeth on the first gear.
+        gear2_teeth: The number of teeth on the second gear.
+        x_offset: The global x-coordinate offset for the gear pair.
+        y_offset: The global y-coordinate offset for the gear pair.
+    """
     if 'DISPLAY' not in os.environ and 'XDG_SESSION_TYPE' not in os.environ:
         plt.switch_backend('Agg')
 

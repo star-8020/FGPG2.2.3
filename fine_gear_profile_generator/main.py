@@ -24,8 +24,14 @@ except ImportError:
     sys.exit(1)
 
 def run_headless_mode() -> None:
-    """Generate gears using default parameters without launching the GUI."""
+    """Generate gears using default parameters without launching the GUI.
 
+    This function provides a way to run the gear generation process from the
+    command line without a graphical interface. It loads the default parameters
+    from the configuration, runs the core calculation engine, and saves the
+    resulting gear profiles as both an image and a DXF file in the default
+    working directory.
+    """
     print("Running in headless mode with default parameters...")
 
     config_data = config_manager.load_app_config()
@@ -71,8 +77,17 @@ def run_headless_mode() -> None:
 
 
 def main(argv: Optional[list[str]] = None) -> None:
-    """Parse command-line arguments and execute the requested mode."""
+    """Main entry point for the application.
 
+    This function parses command-line arguments to determine whether to run
+    in GUI mode or headless mode. If the ``--headless`` flag is provided, it
+    executes the headless generation. Otherwise, it launches the Tkinter-based
+    graphical user interface.
+
+    Args:
+        argv: An optional list of command-line arguments. If not provided,
+            ``sys.argv[1:]`` will be used.
+    """
     parser = argparse.ArgumentParser(
         description="A fine gear profile generator for spur and internal gears."
     )

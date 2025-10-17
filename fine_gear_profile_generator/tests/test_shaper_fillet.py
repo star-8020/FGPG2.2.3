@@ -12,9 +12,17 @@ from fine_gear_profile_generator.core.geometry_generator import rack_trochoid_ro
 
 
 class TestShaperFilletIntegration(unittest.TestCase):
+    """Test suite for the shaper fillet generation and its integration.
 
+    This class tests the integration of the shaper fillet generation method
+    into the main geometry generator. It verifies that the correct fillet
+    generation function is called based on the user's selection and that the
+    parameters are passed correctly. It also includes a key test to verify
+    the convergence of the shaper fillet to a standard rack-generated trochoid
+    as the shaper cutter size becomes very large.
+    """
     def setUp(self):
-        """Set up common parameters for testing."""
+        """Set up common parameters for testing the shaper fillet integration."""
         self.segmentation = SegmentationSettings(involute=15, edge=15, root_round=15)
         self.driver = GearSpec(teeth=18, profile_shift=0.2)
         self.driven = GearSpec(teeth=36, profile_shift=0.0)
@@ -37,8 +45,11 @@ class TestShaperFilletIntegration(unittest.TestCase):
 
     @patch('fine_gear_profile_generator.core.shaper_fillet.compute_shaper_root_fillet')
     def test_shaper_fillet_called_when_method_is_shaper(self, mock_compute_shaper_fillet):
-        """
-        Verify that compute_shaper_root_fillet is called when the method is 'shaper_trochoid'.
+        """Test that the shaper fillet function is called when selected.
+
+        This test uses a mock to verify that when the root fillet method is set
+        to 'shaper_trochoid', the ``compute_shaper_root_fillet`` function is
+        indeed called by the geometry generator.
         """
         # Arrange
         # Mock the function to return a dummy fillet and SOI data
@@ -58,8 +69,13 @@ class TestShaperFilletIntegration(unittest.TestCase):
 
     @patch('fine_gear_profile_generator.core.shaper_fillet.compute_shaper_root_fillet')
     def test_normal_tooth_thickness_converted_to_inches(self, mock_compute_shaper_root_fillet):
-        """Ensure the normal tooth thickness passed to the shaper fillet is in inches."""
+        """Test that normal tooth thickness is correctly converted to inches.
 
+        The core shaper fillet algorithm expects certain parameters in inches.
+        This test verifies that the normal tooth thickness, which is calculated
+        in millimeters, is correctly converted to inches before being passed to
+        the fillet generation function.
+        """
         mock_compute_shaper_root_fillet.return_value = ([[0, 0], [1, 1]], {})
 
         params = GearPairParameters(
@@ -95,8 +111,11 @@ class TestShaperFilletIntegration(unittest.TestCase):
 
     @patch('fine_gear_profile_generator.core.geometry_generator.rack_trochoid_root_curve')
     def test_rack_trochoid_called_when_method_is_rack(self, mock_rack_trochoid_root_curve):
-        """
-        Verify that the classic rack_trochoid_root_curve is called for the 'rack_trochoid' method.
+        """Test that the rack trochoid function is called when selected.
+
+        This test uses a mock to verify that when the root fillet method is set
+        to 'rack_trochoid', the ``rack_trochoid_root_curve`` function is
+        called by the geometry generator.
         """
         # Arrange
         mock_rack_trochoid_root_curve.return_value = [[0, 0], [1, 1]]
@@ -113,9 +132,11 @@ class TestShaperFilletIntegration(unittest.TestCase):
         mock_rack_trochoid_root_curve.assert_called_once()
 
     def test_raises_error_if_shaper_params_missing(self):
-        """
-        Verify that a ValueError is raised if 'shaper_trochoid' is selected
-        but shaper_cutter parameters are not provided.
+        """Test that an error is raised if shaper parameters are missing.
+
+        This test ensures that the system raises a ``ValueError`` if the
+        'shaper_trochoid' method is selected but no shaper cutter parameters
+        are provided, which is a required condition for that method.
         """
         # Arrange
         params = GearPairParameters(
@@ -129,10 +150,17 @@ class TestShaperFilletIntegration(unittest.TestCase):
             geometry_generator.generate_tooth_profile(params=params, gear_type='driver')
 
     def test_shaper_fillet_converges_to_rack_fillet(self):
-        """
-        Verify that the shaper fillet converges to the rack trochoid as the
-        shaper cutter's number of teeth approaches infinity, as described
-        in README.md.
+        """Test that the shaper fillet converges to the rack fillet.
+
+        This is a key validation test for the shaper fillet algorithm. It is
+        based on the theoretical principle that a shaper cutter with an
+        infinite number of teeth is equivalent to a rack cutter. Therefore, as
+        the number of teeth on the shaper cutter becomes very large, the
+        generated fillet should converge to the same curve as the one generated
+        by the classic rack trochoid method.
+
+        This test calculates both curves and measures the deviation between
+        them, asserting that it is below a small tolerance.
         """
         # 1. Test Parameters (using module system, lengths in mm)
         module = 1.0

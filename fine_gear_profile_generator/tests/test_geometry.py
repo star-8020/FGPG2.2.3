@@ -5,8 +5,14 @@ from fine_gear_profile_generator.core import geometry_generator
 from fine_gear_profile_generator.core import models
 
 class TestGeometryGeneration(unittest.TestCase):
+    """Test suite for the core geometry generation logic.
+
+    This class contains tests that validate the output of the tooth profile
+    generation functions, including handling of standard cases, undercutting,
+    and the structural integrity of the generated geometric data.
+    """
     def setUp(self):
-        """Set up common parameters for geometry tests."""
+        """Set up common parameters and configurations for geometry tests."""
         segmentation = models.SegmentationSettings(involute=20, edge=10, root_round=10)
         # A dummy driven gear is needed for the GearPairParameters model
         driven_spec = models.GearSpec(teeth=30, profile_shift=0.0)
@@ -44,9 +50,11 @@ class TestGeometryGeneration(unittest.TestCase):
         )
 
     def test_generate_single_tooth_profile_runs_successfully(self):
-        """
-        Tests that the main geometry generation function runs without raising exceptions
-        and returns valid data structures.
+        """Test that geometry generation runs without errors.
+
+        This test ensures that the main geometry generation function can be
+        called with standard parameters without raising any exceptions and that
+        it returns data of the expected types.
         """
         try:
             profile, Z_calc, P_ANGLE, ALIGN_ANGLE, status = geometry_generator.generate_tooth_profile(
@@ -64,9 +72,11 @@ class TestGeometryGeneration(unittest.TestCase):
             self.fail(f"generate_tooth_profile() raised an exception unexpectedly: {e}")
 
     def test_generated_coordinates_are_valid(self):
-        """
-        Tests that the generated coordinates are finite and non-empty, which is a
-        proxy for checking spline smoothness and avoiding mathematical errors.
+        """Test that generated coordinates are finite and non-empty.
+
+        This test acts as a sanity check to ensure that the geometry generation
+        process produces valid numerical data. It checks that all vertices in
+        the generated splines and all parameters of the arcs are finite numbers.
         """
         profile, _, _, _, _ = geometry_generator.generate_tooth_profile(
             params=self.standard_params, gear_type='driver'
@@ -90,9 +100,13 @@ class TestGeometryGeneration(unittest.TestCase):
         self.assertTrue(np.all(np.isfinite(all_vertices_arr)))
 
     def test_undercut_is_corrected(self):
-        """
-        Tests that the system correctly identifies an undercut and that the geometry
-        is generated with separate, unmerged splines.
+        """Test that undercut is correctly identified and handled.
+
+        This test uses a gear configuration that is known to cause undercutting.
+        It verifies that the system correctly reports a "Corrected" status and
+        that the resulting geometry is structured differently, with separate
+        splines for the root and flank, which is the expected behavior for
+        corrected undercuts.
         """
         profile, _, _, _, status = geometry_generator.generate_tooth_profile(
             params=self.undercut_params, gear_type='driver'
@@ -115,9 +129,12 @@ class TestGeometryGeneration(unittest.TestCase):
         self.assertEqual(spline_count, 6)
 
     def test_no_undercut_splines_are_merged(self):
-        """
-        Tests that the root and flank splines are correctly merged into a single
-        profile spline when there is no undercut.
+        """Test that splines are merged when there is no undercut.
+
+        This test uses a standard gear configuration where no undercutting is
+        expected. It verifies that the system reports an "OK" status and that
+        the root and flank splines are merged into a single continuous profile
+        spline, which is the correct behavior for non-undercut gears.
         """
         profile, _, _, _, status = geometry_generator.generate_tooth_profile(
             params=self.standard_params, gear_type='driver'

@@ -61,16 +61,39 @@ INT_PARAM_KEYS = {
 
 
 def get_config_path(filename: str = DEFAULT_CONFIG_FILENAME) -> str:
-    """Return the absolute path to the application configuration file."""
+    """Return the absolute path to the application configuration file.
 
+    This function constructs the full path to the configuration file, assuming
+    it is located in the project's root directory. This allows the application
+    to reliably find its configuration regardless of where it is run from.
+
+    Args:
+        filename: The name of the configuration file. Defaults to
+            ``config.json``.
+
+    Returns:
+        The absolute path to the configuration file.
+    """
     package_root = os.path.dirname(os.path.dirname(__file__))
     project_root = os.path.dirname(package_root)
     return os.path.join(project_root, filename)
 
 
 def load_app_config(path: str | None = None) -> Dict[str, object]:
-    """Load application configuration data from JSON."""
+    """Load application configuration data from JSON.
 
+    This function reads the main application configuration file (usually
+    ``config.json``) and parses it as JSON. It handles cases where the file
+    does not exist or is malformed by returning an empty dictionary.
+
+    Args:
+        path: An optional path to the configuration file. If not provided,
+            the default path is determined by ``get_config_path``.
+
+    Returns:
+        A dictionary containing the application configuration, or an empty
+        dictionary if loading fails.
+    """
     config_path = path or get_config_path()
     if not os.path.exists(config_path):
         return {}
@@ -82,8 +105,20 @@ def load_app_config(path: str | None = None) -> Dict[str, object]:
 
 
 def get_defaults(config_data: Dict[str, object] | None = None) -> Dict[str, object]:
-    """Return merged default values using configuration data with fallbacks."""
+    """Return merged default values using configuration data with fallbacks.
 
+    This function provides a consolidated set of default parameters for the
+    application. It starts with a hardcoded set of fallback defaults, and then
+    overrides them with any defaults specified in the application's
+    configuration file.
+
+    Args:
+        config_data: An optional dictionary of configuration data. If not
+            provided, it is loaded from the default config file.
+
+    Returns:
+        A dictionary of default parameter values.
+    """
     config = config_data or load_app_config()
     defaults = dict(FALLBACK_DEFAULTS)
     defaults.update(config.get('defaults', {}))
@@ -91,8 +126,17 @@ def get_defaults(config_data: Dict[str, object] | None = None) -> Dict[str, obje
 
 
 def _build_segmentation(defaults: Dict[str, object]) -> SegmentationSettings:
-    """Construct segmentation settings from the defaults table."""
+    """Construct segmentation settings from the defaults table.
 
+    This is a helper function to create a ``SegmentationSettings`` object from
+    a dictionary of default values.
+
+    Args:
+        defaults: A dictionary of default parameters.
+
+    Returns:
+        A ``SegmentationSettings`` object.
+    """
     return SegmentationSettings(
         involute=int(defaults.get('seg_involute', FALLBACK_DEFAULTS['seg_involute'])),
         edge=int(defaults.get('seg_edge_r', FALLBACK_DEFAULTS['seg_edge_r'])),
@@ -101,8 +145,17 @@ def _build_segmentation(defaults: Dict[str, object]) -> SegmentationSettings:
 
 
 def _build_gear_specs(defaults: Dict[str, object]) -> Tuple[GearSpec, GearSpec]:
-    """Return driver and driven gear specifications."""
+    """Return driver and driven gear specifications.
 
+    This is a helper function to create ``GearSpec`` objects for both the
+    driver and driven gears from a dictionary of default values.
+
+    Args:
+        defaults: A dictionary of default parameters.
+
+    Returns:
+        A tuple containing two ``GearSpec`` objects: (driver, driven).
+    """
     driver = GearSpec(
         teeth=int(defaults.get('teeth_number_z', FALLBACK_DEFAULTS['teeth_number_z'])),
         profile_shift=float(defaults.get('offset_factor_x', FALLBACK_DEFAULTS['offset_factor_x'])),
@@ -115,8 +168,19 @@ def _build_gear_specs(defaults: Dict[str, object]) -> Tuple[GearSpec, GearSpec]:
 
 
 def get_default_gear_pair_parameters(config_data: Dict[str, object] | None = None) -> GearPairParameters:
-    """Build a ``GearPairParameters`` instance populated with default values."""
+    """Build a ``GearPairParameters`` instance populated with default values.
 
+    This function assembles a complete ``GearPairParameters`` object using the
+    application's default settings. It handles the logic for selecting the
+    root fillet method and loading shaper cutter parameters if required.
+
+    Args:
+        config_data: An optional dictionary of configuration data. If not
+            provided, it is loaded from the default config file.
+
+    Returns:
+        A ``GearPairParameters`` object populated with default values.
+    """
     config = config_data or load_app_config()
     defaults = get_defaults(config)
     segmentation = _build_segmentation(defaults)
@@ -157,22 +221,53 @@ def get_default_gear_pair_parameters(config_data: Dict[str, object] | None = Non
 
 
 def get_default_calculation_params(config_data: Dict[str, object] | None = None) -> Dict[str, object]:
-    """Expose defaults using the legacy dictionary schema."""
+    """Expose defaults using the legacy dictionary schema.
 
+    This function provides a way to get the default parameters in the older,
+    dictionary-based format that is used by some parts of the calculation
+    engine. It's primarily for backward compatibility.
+
+    Args:
+        config_data: An optional dictionary of configuration data.
+
+    Returns:
+        A dictionary of default parameters with legacy key names.
+    """
     params = get_default_gear_pair_parameters(config_data)
     return params.to_calculation_dict()
 
 
 def get_default_working_directory(config_data: Dict[str, object] | None = None) -> str:
-    """Return the default working directory specified in the configuration."""
+    """Return the default working directory specified in the configuration.
 
+    This function retrieves the default directory for saving output files,
+    such as generated gear profiles and parameter sets.
+
+    Args:
+        config_data: An optional dictionary of configuration data.
+
+    Returns:
+        The default working directory path as a string.
+    """
     defaults = get_defaults(config_data)
     return str(defaults.get('working_directory', FALLBACK_DEFAULTS['working_directory']))
 
 
 def save_params(working_dir: str, params_dict: Dict[str, object]) -> Tuple[bool, str]:
-    """Persist UI parameters to ``Inputs.dat`` in the specified directory."""
+    """Persist UI parameters to ``Inputs.dat`` in the specified directory.
 
+    This function saves a dictionary of parameters to a file named ``Inputs.dat``
+    in the given directory. The parameters are stored in JSON format.
+
+    Args:
+        working_dir: The directory where the file should be saved.
+        params_dict: A dictionary of parameters to save.
+
+    Returns:
+        A tuple containing:
+            - A boolean indicating whether the save was successful.
+            - A string message describing the outcome.
+    """
     os.makedirs(working_dir, exist_ok=True)
     filepath = os.path.join(working_dir, 'Inputs.dat')
     try:
@@ -184,8 +279,20 @@ def save_params(working_dir: str, params_dict: Dict[str, object]) -> Tuple[bool,
 
 
 def load_params(working_dir: str) -> Tuple[bool, Dict[str, object] | str]:
-    """Load parameters from ``Inputs.dat`` within the given directory."""
+    """Load parameters from ``Inputs.dat`` within the given directory.
 
+    This function reads a JSON file named ``Inputs.dat`` from the specified
+    directory and returns the loaded parameters as a dictionary.
+
+    Args:
+        working_dir: The directory from which to load the file.
+
+    Returns:
+        A tuple containing:
+            - A boolean indicating whether the load was successful.
+            - If successful, a dictionary of the loaded parameters.
+            - If unsuccessful, a string message describing the error.
+    """
     filepath = os.path.join(working_dir, 'Inputs.dat')
     if not os.path.exists(filepath):
         return False, f"File not found: {filepath}"

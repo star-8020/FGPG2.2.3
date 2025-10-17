@@ -15,7 +15,14 @@ from ..core.models import Arc, GearProfileGeometry, Spline, StructuredToothProfi
 
 
 def rad2deg(rad: float) -> float:
-    """Convert radians to degrees."""
+    """Convert an angle from radians to degrees.
+
+    Args:
+        rad: The angle in radians.
+
+    Returns:
+        The angle in degrees.
+    """
     return rad * 180.0 / np.pi
 
 
@@ -27,7 +34,21 @@ def _render_tooth_profile(
     x_offset: float,
     y_offset: float,
 ) -> None:
-    """Render a single structured tooth profile into the modelspace."""
+    """Render a single structured tooth profile into the modelspace.
+
+    This helper function takes a ``StructuredToothProfile``, which is composed
+    of splines and arcs, and adds its geometric elements to the DXF modelspace.
+    It applies the necessary rotation and translation to position the tooth
+    correctly within the gear.
+
+    Args:
+        msp: The ezdxf modelspace to draw on.
+        profile: The structured tooth profile to render.
+        color: The DXF color code for the tooth profile.
+        rotation_angle: The angle (in radians) to rotate the tooth.
+        x_offset: The x-coordinate offset for the gear's center.
+        y_offset: The y-coordinate offset for the gear's center.
+    """
     for element in profile.elements:
         if isinstance(element, Spline):
             vertices = np.array(element.vertices)
@@ -70,7 +91,20 @@ def export_gear_pair_to_dxf(
     x_offset: float,
     y_offset: float,
 ) -> None:
-    """Export the supplied gear pair geometry to a DXF file."""
+    """Export the supplied gear pair geometry to a DXF file.
+
+    This function creates a new DXF document and populates it with the geometry
+    of a meshing gear pair. It iterates through each tooth of both gears,
+    rendering them in their correct positions and orientations.
+
+    Args:
+        working_dir: The directory where the DXF file will be saved.
+        gear1: The geometric data for the first gear (driver).
+        gear2: The geometric data for the second gear (driven).
+        center_dist: The center distance between the two gears.
+        x_offset: The global x-coordinate offset for the gear pair.
+        y_offset: The global y-coordinate offset for the gear pair.
+    """
     doc = ezdxf.new('R2000')
     msp = doc.modelspace()
 

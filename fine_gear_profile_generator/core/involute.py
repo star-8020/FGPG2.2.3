@@ -8,18 +8,25 @@ import numpy as np
 
 
 def involute_polar_angle(r, rb):
-    """
-    Calculates the polar angle (involute function) of an involute curve at a given radius.
-    The angle is relative to the starting point of the involute on the base circle.
+    """Calculates the polar angle of an involute curve.
 
-    This is equivalent to the involute function, inv(alpha) = tan(alpha) - alpha.
+    This function computes the polar angle (often denoted as the involute
+    function, inv(α)) for a point on an involute curve at a specified radius.
+    The angle is measured from the starting point of the involute on the base
+    circle.
+
+    The formula used is: inv(α) = tan(α) - α, where α = arccos(rb / r).
 
     Args:
-        r (float or np.ndarray): Radius at which to calculate the involute angle.
-        rb (float): Base circle radius.
+        r: The radius (or radii) at which to calculate the involute angle.
+           Can be a float or a NumPy array.
+        rb: The base circle radius of the gear.
 
     Returns:
-        float or np.ndarray: The polar angle in radians. Returns np.nan for r < rb.
+        The polar angle in radians. Returns ``np.nan`` for any radius `r` that
+        is less than the base radius `rb`, as the involute is not defined in
+        that region. The return type will be a float if `r` is a scalar, or a
+        NumPy array if `r` is an array.
     """
     # Use np.errstate to avoid warnings for invalid values (e.g., r < rb),
     # which will result in np.nan.

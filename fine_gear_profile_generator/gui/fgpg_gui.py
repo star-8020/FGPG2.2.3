@@ -44,9 +44,25 @@ GRAPHIC_FIELDS = [
 ]
 
 class GearApp(tk.Tk):
-    """Main Tkinter window hosting all application widgets."""
+    """Main Tkinter window for the Fine Gear Profile Generator.
 
+    This class encapsulates the entire graphical user interface of the
+    application. It is responsible for creating and arranging all the widgets,
+    handling user interactions, and orchestrating the calls to the core gear
+    generation engine.
+
+    Attributes:
+        config_data (Dict): The application's configuration loaded from a file.
+        defaults (Dict): The default parameter values for the UI fields.
+        vars (Dict[str, tk.StringVar]): A dictionary to hold the Tkinter string
+            variables tied to the UI entry fields.
+        current_image_path (str): The filename of the currently displayed result
+            image.
+        logo_image (Optional[ImageTk.PhotoImage]): The application logo image.
+        result_image (Optional[ImageTk.PhotoImage]): The generated gear pair image.
+    """
     def __init__(self) -> None:
+        """Initializes the main application window and all its components."""
         super().__init__()
         self.config_data = config_manager.load_app_config()
         self.defaults = config_manager.get_defaults(self.config_data)
@@ -91,8 +107,19 @@ class GearApp(tk.Tk):
         default_val: object,
         unit: str,
     ) -> None:
-        """Create a labeled entry widget and store its variable."""
+        """Create a labeled entry widget and store its variable.
 
+        This helper method standardizes the creation of a row in the UI that
+        consists of a label, an entry field, and a unit description.
+
+        Args:
+            parent: The parent Tkinter frame to which the widgets will be added.
+            row: The grid row number for placing the widgets.
+            key: The dictionary key used to store the entry's ``tk.StringVar``.
+            label: The text label for the entry field.
+            default_val: The initial value for the entry field.
+            unit: The unit string to display next to the entry field.
+        """
         ttk.Label(parent, text=f"{label} =").grid(row=row, column=0, sticky="w", pady=2)
         var = tk.StringVar(value=str(default_val))
         self.vars[key] = var
@@ -100,8 +127,15 @@ class GearApp(tk.Tk):
         ttk.Label(parent, text=unit).grid(row=row, column=2, sticky="w")
 
     def create_spec_widgets(self, parent: ttk.Frame) -> None:
-        """Create widgets that capture the first gear's specification."""
+        """Create widgets that capture the first gear's specification.
 
+        This method builds the UI section for inputting the main parameters of
+        the first gear (the driver), including a dropdown for selecting the
+        root fillet generation method.
+
+        Args:
+            parent: The parent Tkinter frame.
+        """
         frame = ttk.LabelFrame(parent, text="1. Gear Spec (Gear 1)", padding="10")
         frame.grid(row=0, column=0, sticky="ew", pady=5)
         for i, (key, label, unit) in enumerate(SPEC_FIELDS):
@@ -121,7 +155,15 @@ class GearApp(tk.Tk):
         fillet_combo.bind("<<ComboboxSelected>>", self._toggle_shaper_widgets)
 
     def create_shaper_cutter_widgets(self, parent: ttk.Frame) -> None:
-        """Create widgets for shaper cutter parameters."""
+        """Create widgets for shaper cutter parameters.
+
+        This method builds the UI section for the shaper cutter's parameters.
+        This section is only visible when the 'shaper_trochoid' root fillet
+        method is selected.
+
+        Args:
+            parent: The parent Tkinter frame.
+        """
         self.shaper_frame = ttk.LabelFrame(parent, text="1.2. Shaper Cutter Spec", padding="10")
         # Grid placement is handled by _toggle_shaper_widgets
 
@@ -131,15 +173,29 @@ class GearApp(tk.Tk):
         self.create_entry(self.shaper_frame, 0, 'shaper_teeth_n0', 'Shaper Teeth, n0', shaper_defaults.get('n0', 1000), '[ea]')
 
     def _toggle_shaper_widgets(self, event=None) -> None:
-        """Show or hide the shaper cutter widgets based on the selected fillet method."""
+        """Show or hide the shaper cutter widgets.
+
+        This method is bound to the root fillet method combobox. It checks the
+        selected value and either displays the shaper cutter parameter frame
+        or hides it.
+
+        Args:
+            event: The Tkinter event that triggered the call (optional).
+        """
         if self.vars['root_fillet_method'].get() == 'shaper_trochoid':
             self.shaper_frame.grid(row=1, column=0, sticky="ew", pady=5)
         else:
             self.shaper_frame.grid_remove()
 
     def create_mating_gear_widgets(self, parent: ttk.Frame) -> None:
-        """Create widgets that capture the mating gear specification."""
+        """Create widgets that capture the mating gear specification.
 
+        This method builds the UI section for inputting the parameters of the
+        second gear (the driven gear).
+
+        Args:
+            parent: The parent Tkinter frame.
+        """
         frame = ttk.LabelFrame(parent, text="1.5. Mating Gear Spec (Gear 2)", padding="10")
         frame.grid(row=2, column=0, sticky="ew", pady=5)
         for i, (key, label, unit) in enumerate(MATING_FIELDS):
@@ -147,8 +203,15 @@ class GearApp(tk.Tk):
             self.create_entry(frame, i, key, label, default_val, unit)
 
     def create_analysis_widgets(self, parent: ttk.Frame) -> None:
-        """Create static fields for presenting calculation results."""
+        """Create static fields for presenting calculation results.
 
+        This method builds the UI section that displays the results of the
+        gear pair analysis, such as contact ratio and center distance. These
+        fields are read-only and are updated after a calculation is run.
+
+        Args:
+            parent: The parent Tkinter frame.
+        """
         frame = ttk.LabelFrame(parent, text="Analysis", padding="10")
         frame.grid(row=3, column=0, sticky="ew", pady=5)
         ttk.Label(frame, text="Contact Ratio:").grid(row=0, column=0, sticky="w")
@@ -163,8 +226,15 @@ class GearApp(tk.Tk):
         ttk.Label(frame, textvariable=self.vars['center_distance']).grid(row=1, column=1, sticky="w")
 
     def create_graphics_widgets(self, parent: ttk.Frame) -> None:
-        """Create widgets for graphics and miscellaneous settings."""
+        """Create widgets for graphics and miscellaneous settings.
 
+        This method builds the UI section for parameters related to the
+        graphical output and rendering, such as the center coordinates and
+        the segmentation resolution.
+
+        Args:
+            parent: The parent Tkinter frame.
+        """
         frame = ttk.LabelFrame(parent, text="2. Graphics & Misc.", padding="10")
         frame.grid(row=4, column=0, sticky="ew", pady=5)
         for i, (key, label, unit) in enumerate(GRAPHIC_FIELDS):
@@ -172,8 +242,15 @@ class GearApp(tk.Tk):
             self.create_entry(frame, i, key, label, default_val, unit)
 
     def create_control_widgets(self, parent: ttk.Frame) -> None:
-        """Create save/load/run controls and the preview panel."""
+        """Create save/load/run controls and the preview panel.
 
+        This method builds the right-hand side of the UI, which includes the
+        working directory selection, the image preview area, the status bar,
+        and the main control buttons (Load, Run, Save, Exit).
+
+        Args:
+            parent: The parent Tkinter frame.
+        """
         dir_frame = ttk.Frame(parent)
         dir_frame.grid(row=0, column=0, sticky="ew", pady=5)
         ttk.Label(dir_frame, text="Working Directory:").grid(row=0, column=0, sticky="w")
@@ -198,8 +275,12 @@ class GearApp(tk.Tk):
         ttk.Button(btn_frame, text="Exit", command=self.quit).pack(side="left", padx=5)
 
     def load_logo_image(self) -> None:
-        """Load the application logo if Pillow is available."""
+        """Load and display the application logo.
 
+        This method attempts to load a logo image from a predefined path. If
+        the Pillow library is not installed, or if the image cannot be loaded,
+        it updates the UI to inform the user.
+        """
         if not PIL_AVAILABLE:
             self.image_label.config(text="Pillow library not found. Image preview is disabled.")
             return
@@ -216,15 +297,28 @@ class GearApp(tk.Tk):
             self.status_var.set("Info: Logo image not found.")
 
     def browse_dir(self) -> None:
-        """Prompt the user to choose a working directory."""
+        """Open a dialog for the user to select a working directory.
 
+        This method is called when the "Browse..." button is clicked. It opens
+        a standard directory selection dialog and updates the working directory
+        entry field with the user's choice.
+        """
         dir_name = filedialog.askdirectory()
         if dir_name:
             self.vars['working_directory'].set(dir_name)
 
     def _params_from_ui(self) -> Optional[GearPairParameters]:
-        """Parse UI fields into a ``GearPairParameters`` instance."""
+        """Parse UI fields into a ``GearPairParameters`` instance.
 
+        This private helper method reads the current values from all the UI
+        entry fields, converts them to the correct data types, and assembles
+        them into a ``GearPairParameters`` object. It performs error handling
+        and displays a message box if any input is invalid.
+
+        Returns:
+            A ``GearPairParameters`` object if all inputs are valid, otherwise
+            ``None``.
+        """
         try:
             segmentation = SegmentationSettings(
                 involute=int(self.vars['seg_involute'].get()),
@@ -276,8 +370,13 @@ class GearApp(tk.Tk):
             return None
 
     def run_calculation(self) -> None:
-        """Execute the gear generation engine with the current inputs."""
+        """Execute the gear generation engine with the current inputs.
 
+        This is the main action method, triggered by the "Run" button. It
+        retrieves parameters from the UI, calls the core gear generation
+        function, and then triggers the export of the results to image and DXF
+        files. It also updates the analysis fields and status bar in the UI.
+        """
         params = self._params_from_ui()
         if not params:
             return
@@ -325,8 +424,13 @@ class GearApp(tk.Tk):
             self.status_var.set(f"Run: Failed. {exc}")
 
     def display_result_image(self) -> None:
-        """Show the generated preview image, if possible."""
+        """Show the generated preview image, if possible.
 
+        This method is called after a successful calculation. It attempts to
+        load the generated gear pair image from the working directory and
+        display it in the UI's image preview area. It handles errors such as
+        the image file not being found.
+        """
         if not PIL_AVAILABLE:
             self.status_var.set("Run: OK. Install Pillow (pip install Pillow) for image preview.")
             return
@@ -345,8 +449,12 @@ class GearApp(tk.Tk):
             self.status_var.set(f"Error displaying image: {exc}")
 
     def save_params_to_file(self) -> None:
-        """Persist current UI parameters to disk."""
+        """Persist current UI parameters to disk.
 
+        This method is triggered by the "Save" button. It gathers all the
+        current values from the UI fields and saves them to a JSON file named
+        ``Inputs.dat`` in the current working directory.
+        """
         working_dir = self.vars['working_directory'].get()
         data_to_save = {key: var.get() for key, var in self.vars.items() if key != 'working_directory'}
         success, message = config_manager.save_params(working_dir, data_to_save)
@@ -355,8 +463,12 @@ class GearApp(tk.Tk):
             messagebox.showerror("Save Error", message)
 
     def load_params_from_file(self) -> None:
-        """Populate UI fields from a saved parameter file."""
+        """Populate UI fields from a saved parameter file.
 
+        This method is triggered by the "Load" button. It reads the
+        ``Inputs.dat`` file from the current working directory and populates
+        the UI fields with the loaded values.
+        """
         working_dir = self.vars['working_directory'].get()
         success, data_or_error = config_manager.load_params(working_dir)
         if success and isinstance(data_or_error, dict):

@@ -16,8 +16,20 @@ from .models import (
 def _resolve_parameters(
     params: Union[GearPairParameters, Dict[str, float]],
 ) -> GearPairParameters:
-    """Normalize legacy dictionaries into ``GearPairParameters`` instances."""
+    """Normalize legacy dictionaries into ``GearPairParameters`` instances.
 
+    This function ensures that the gear parameters are always represented by a
+    ``GearPairParameters`` object, allowing for consistent access to parameter
+    values throughout the calculation pipeline. It handles both modern
+    ``GearPairParameters`` objects and older dictionary-based parameter sets.
+
+    Args:
+        params: The gear parameters, which can be either a ``GearPairParameters``
+            object or a dictionary mapping parameter names to float values.
+
+    Returns:
+        A ``GearPairParameters`` instance containing the normalized gear parameters.
+    """
     if isinstance(params, GearPairParameters):
         return params
     return GearPairParameters.from_dict(params)
@@ -26,8 +38,22 @@ def _resolve_parameters(
 def generate_gear_pair(
     params: Union[GearPairParameters, Dict[str, float]],
 ) -> GearPairResult:
-    """Compute all derived geometry and analysis data for the supplied gear pair."""
+    """Compute all derived geometry and analysis data for the supplied gear pair.
 
+    This is the main entry point for generating a pair of gears. It takes a set of
+    gear parameters, calculates key performance metrics like contact ratio and
+    center distance, checks for undercut conditions, and generates the tooth
+    profile geometry for both the driver and driven gears.
+
+    Args:
+        params: The gear parameters, which can be provided as a
+            ``GearPairParameters`` object or a dictionary.
+
+    Returns:
+        A ``GearPairResult`` object containing the complete analysis and
+        geometric data for the gear pair, including the tooth profiles for
+        both gears.
+    """
     normalized_params = _resolve_parameters(params)
     calc_params = normalized_params.to_calculation_dict()
 

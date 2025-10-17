@@ -8,24 +8,36 @@ It is designed to solve non-linear systems of equations of the form F(X) = 0.
 import numpy as np
 
 def newton_raphson_solver(f, x0, tol=1e-10, max_iter=30, h=1e-6):
-    """
-    A generic Newton-Raphson solver for single or multi-variable systems,
-    using finite differences for the derivative or Jacobian.
+    """A generic Newton-Raphson solver for single or multi-variable systems.
+
+    This function finds the root of a system of non-linear equations, F(X) = 0,
+    using the Newton-Raphson iterative method. It can handle both single-variable
+    and multi-variable (vector) functions. The derivative (for single-variable)
+    or the Jacobian matrix (for multi-variable) is approximated using a
+    forward finite difference method.
 
     Args:
-        f (callable): The function F(X) for which to find the root.
-                      It must take a scalar or NumPy array and return a scalar or NumPy array.
-        x0 (float or np.ndarray): The initial guess for the variable(s) X.
-        tol (float): The convergence tolerance for the absolute value or norm of F(X).
-        max_iter (int): The maximum number of iterations.
-        h (float): The step size for finite difference approximation.
+        f: The function F(X) for which to find the root. It must take a
+            scalar or NumPy array `X` and return a scalar or NumPy array of
+            the same dimension.
+        x0: The initial guess for the solution `X`. Can be a float or a
+            NumPy array.
+        tol: The convergence tolerance. The solver stops when the absolute
+            value (for scalar) or the L2 norm (for vector) of F(X) is below
+            this value.
+        max_iter: The maximum number of iterations to perform before raising
+            an error.
+        h: The step size used for the finite difference approximation of the
+            derivative or Jacobian.
 
     Returns:
-        float or np.ndarray: The solution X that satisfies F(X) = 0.
+        The solution `X` that satisfies F(X) ≈ 0. The return type (float or
+        NumPy array) matches the type of `x0`.
 
     Raises:
-        RuntimeError: If the solver fails to converge or if the derivative/Jacobian
-                      is zero/singular.
+        RuntimeError: If the solver fails to converge within `max_iter`
+            iterations, or if the derivative or Jacobian is found to be
+            zero or singular, which prevents the next step from being computed.
     """
     x = np.asarray(x0, dtype=float)
     is_scalar = x.ndim == 0

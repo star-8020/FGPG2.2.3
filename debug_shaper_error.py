@@ -10,9 +10,17 @@ from fine_gear_profile_generator.core.models import GearPairParameters, GearSpec
 from fine_gear_profile_generator.utils import config_manager
 
 def run_debug():
-    """
-    Simulates a call to the gear generation core with shaper cutter options
-    to reproduce the error without a GUI.
+    """Run a debug simulation for the shaper cutter fillet generation.
+
+    This script is designed to reproduce and debug issues related to the
+    'shaper_trochoid' root fillet generation method. It bypasses the GUI,
+    loading default parameters from the configuration files, and directly
+    calls the core gear generation engine with the shaper cutter method
+    enabled.
+
+    It prints the parameters being used and will report a success message if
+    the generation completes without errors, or print a full traceback if an
+    exception occurs.
     """
     print("--- Starting Debug Script for Shaper Cutter Error ---")
 
