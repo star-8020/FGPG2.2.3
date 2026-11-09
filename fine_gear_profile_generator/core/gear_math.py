@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Tuple
 
 import numpy as np
+from scipy.optimize import fsolve
 
 FULL_TURN = 2 * np.pi
 RIGHT_ANGLE = np.pi / 2
@@ -28,12 +29,16 @@ def calculate_operating_pressure_angle(
     alpha_rad = np.deg2rad(alpha_deg)
     inv_alpha_w = inv(alpha_rad) + 2 * (x1 + x2) * np.tan(alpha_rad) / (z1 + z2)
     alpha_w = alpha_rad
-    for _ in range(10):
+    for _ in range(50):
         function_val = inv(alpha_w) - inv_alpha_w
         derivative = np.tan(alpha_w) ** 2
-        if abs(derivative) < 1e-9:
+        if abs(derivative) < 1e-12:
             break
         alpha_w = alpha_w - function_val / derivative
+        if abs(function_val) < 1e-15:
+            break
+    if not 0 < alpha_w < np.pi / 2 or abs(inv(alpha_w) - inv_alpha_w) > 1e-10:
+        raise ValueError("Operating pressure angle did not converge; check the profile shifts.")
     return float(alpha_w)
 
 
@@ -164,8 +169,6 @@ def calculate_gear_parameters(
     )
 
 
-from scipy.optimize import fsolve
-
 
 def get_involute_coords(
     theta_values: np.ndarray,
@@ -248,7 +251,9 @@ def solve_undercut_angles(
 
         return (x_i[0] - x_t[0], y_i[0] - y_t[0])
 
-    solution = fsolve(equations, initial_guess)
+    solution, _info, ier, message = fsolve(equations, initial_guess, full_output=True)
+    if ier != 1:
+        raise RuntimeError(f"Undercut intersection could not be found: {message}")
     theta_is, theta_te = solution[0], solution[1]
 
     return float(theta_is), float(theta_te)

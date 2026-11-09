@@ -14,7 +14,7 @@ except ImportError:
     PIL_AVAILABLE = False
 
 from ..core import gear_core
-from ..core.models import GearPairParameters, GearSpec, SegmentationSettings, ShaperCutterParameters
+from ..core.models import FILLET_METHODS, GearPairParameters, GearSpec, SegmentationSettings
 from ..io import dxf_exporter, image_exporter
 from ..utils import config_manager
 
@@ -24,8 +24,8 @@ SPEC_FIELDS = [
     ("pressure_angle_alpha", "Pressure Angle, alpha", "[deg]"),
     ("offset_factor_x", "Offset Factor, x1", "(-1~+1)"),
     ("backlash_factor_b", "Backlash Factor, b", "(0~1)"),
-    ("addendum_factor_a", "Addendum Factor, a", "(0~1)"),
-    ("dedendum_factor_d", "Dedendum Factor, d", "(0~1)"),
+    ("addendum_factor_a", "Addendum Factor, a", "(e.g. 1.0)"),
+    ("dedendum_factor_d", "Dedendum Factor, d", "(e.g. 1.25)"),
     ("hob_edge_radius_c", "Hob Edge Radius, c", ""),
     ("tooth_edge_radius_e", "Tooth Edge Radius, e", "")
 ]
@@ -33,6 +33,13 @@ SPEC_FIELDS = [
 MATING_FIELDS = [
     ("teeth_number_z2", "Teeth Number, z2", "[ea]"),
     ("offset_factor_x2", "Offset Factor, x2", "")
+]
+
+SHAPER_FIELDS = [
+    ("n0", "Shaper Teeth, n0", "[ea], (>=5)"),
+    ("tip_radius_factor", "Tip Radius, rho0/m", "(blank = c)"),
+    ("protuberance_factor", "Protuberance, delta0/m", "(0 = none)"),
+    ("profile_shift_x0", "Cutter Offset, x0", ""),
 ]
 
 GRAPHIC_FIELDS = [
@@ -43,6 +50,9 @@ GRAPHIC_FIELDS = [
     ("seg_root_r", "Seg, root_r", "[ea]")
 ]
 
+PREVIEW_SIZE = 600  # pixels
+
+
 class GearApp(tk.Tk):
     """Main Tkinter window hosting all application widgets."""
 
@@ -52,8 +62,10 @@ class GearApp(tk.Tk):
         self.defaults = config_manager.get_defaults(self.config_data)
 
         window_config = self.config_data.get('window', {})
-        self.title(window_config.get('title', "FGPG - Fine Gear Profile Generator (Refactored)"))
-        self.geometry(window_config.get('geometry', "950x700"))
+        self.title(window_config.get('title', "FGPG - Fine Gear Profile Generator"))
+        if window_config.get('geometry'):
+            self.geometry(window_config['geometry'])
+        # Otherwise Tk sizes the window to fit all widgets.
 
         self.vars: Dict[str, tk.StringVar] = {}
         self.current_image_path: str = self.defaults.get('current_image_path', "Result1.png")
@@ -113,7 +125,7 @@ class GearApp(tk.Tk):
         ttk.Label(frame, text="Fillet Method =").grid(row=row_index, column=0, sticky="w", pady=5)
         var = tk.StringVar(value=self.defaults.get('root_fillet_method', 'rack_trochoid'))
         self.vars['root_fillet_method'] = var
-        fillet_options = ["rack_trochoid", "shaper_trochoid"]
+        fillet_options = list(FILLET_METHODS)
         fillet_combo = ttk.Combobox(frame, textvariable=var, values=fillet_options, state="readonly", width=15)
         fillet_combo.grid(
             row=row_index, column=1, columnspan=2, padx=5, sticky="w"
@@ -125,10 +137,13 @@ class GearApp(tk.Tk):
         self.shaper_frame = ttk.LabelFrame(parent, text="1.2. Shaper Cutter Spec", padding="10")
         # Grid placement is handled by _toggle_shaper_widgets
 
-        shaper_defaults = self.config_data.get('shaper_cutter_defaults', {})
-
-        # Entry for shaper teeth (n0)
-        self.create_entry(self.shaper_frame, 0, 'shaper_teeth_n0', 'Shaper Teeth, n0', shaper_defaults.get('n0', 1000), '[ea]')
+        shaper_defaults = config_manager.get_shaper_defaults(self.config_data)
+        for i, (key, label, unit) in enumerate(SHAPER_FIELDS):
+            default_val = shaper_defaults.get(key)
+            self.create_entry(
+                self.shaper_frame, i, f"shaper_{key}", label,
+                "" if default_val is None else default_val, unit,
+            )
 
     def _toggle_shaper_widgets(self, event=None) -> None:
         """Show or hide the shaper cutter widgets based on the selected fillet method."""
@@ -183,19 +198,21 @@ class GearApp(tk.Tk):
         ttk.Button(dir_frame, text="Browse...", command=self.browse_dir).grid(row=0, column=2)
         dir_frame.columnconfigure(1, weight=1)
 
-        self.image_label = ttk.Label(parent, text="Image will be displayed here.")
-        self.image_label.grid(row=1, column=0, pady=10, sticky="nsew")
-        parent.rowconfigure(1, weight=1)
-
-        self.status_var = tk.StringVar(value="Welcome to the refactored Fine Gear Profile Generator!")
-        ttk.Label(parent, textvariable=self.status_var, wraplength=500).grid(row=2, column=0, sticky="ew", pady=5)
-
+        # Buttons sit directly under the working directory so they stay visible
+        # on small screens.
         btn_frame = ttk.Frame(parent)
-        btn_frame.grid(row=3, column=0, sticky="ew")
+        btn_frame.grid(row=1, column=0, sticky="ew", pady=(0, 5))
         ttk.Button(btn_frame, text="Load", command=self.load_params_from_file).pack(side="left", padx=5)
         ttk.Button(btn_frame, text="Run", command=self.run_calculation).pack(side="left", padx=5)
         ttk.Button(btn_frame, text="Save", command=self.save_params_to_file).pack(side="left", padx=5)
         ttk.Button(btn_frame, text="Exit", command=self.quit).pack(side="left", padx=5)
+
+        self.status_var = tk.StringVar(value="Welcome to the Fine Gear Profile Generator!")
+        ttk.Label(parent, textvariable=self.status_var, wraplength=600).grid(row=2, column=0, sticky="ew", pady=5)
+
+        self.image_label = ttk.Label(parent, text="Image will be displayed here.")
+        self.image_label.grid(row=3, column=0, pady=5, sticky="nsew")
+        parent.rowconfigure(3, weight=1)
 
     def load_logo_image(self) -> None:
         """Load the application logo if Pillow is available."""
@@ -203,17 +220,16 @@ class GearApp(tk.Tk):
         if not PIL_AVAILABLE:
             self.image_label.config(text="Pillow library not found. Image preview is disabled.")
             return
-        logo_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'FGPG2-05', 'FGPG2.png')
+        logo_path = os.path.join(os.path.dirname(config_manager.get_config_path()), 'FGPG2-05', 'FGPG2.png')
         if os.path.exists(logo_path):
             try:
                 img = Image.open(logo_path)
-                img.thumbnail((500, 500))
+                img.thumbnail((PREVIEW_SIZE, PREVIEW_SIZE))
                 self.logo_image = ImageTk.PhotoImage(img)
                 self.image_label.config(image=self.logo_image)
             except Exception as exc:  # pragma: no cover - UI feedback
                 self.status_var.set(f"Info: Could not load logo. {exc}")
-        else:
-            self.status_var.set("Info: Logo image not found.")
+        # A missing logo is not an error: the preview area simply stays empty.
 
     def browse_dir(self) -> None:
         """Prompt the user to choose a working directory."""
@@ -242,16 +258,8 @@ class GearApp(tk.Tk):
             shaper_params = None
             root_fillet_method = self.vars['root_fillet_method'].get()
             if root_fillet_method == 'shaper_trochoid':
-                shaper_defaults = self.config_data.get('shaper_cutter_defaults', {})
-                shaper_params = ShaperCutterParameters(
-                    Pnd0=shaper_defaults.get('Pnd0'),
-                    n0=int(self.vars['shaper_teeth_n0'].get()),
-                    phi_n0_deg=shaper_defaults.get('phi_n0_deg'),
-                    psi0_deg=shaper_defaults.get('psi0_deg'),
-                    sn0=shaper_defaults.get('sn0'),
-                    da0=shaper_defaults.get('da0'),
-                    rho0=shaper_defaults.get('rho0'),
-                    delta0=shaper_defaults.get('delta0')
+                shaper_params = config_manager.build_shaper_cutter_parameters(
+                    {key: self.vars[f"shaper_{key}"].get() for key, _, _ in SHAPER_FIELDS}
                 )
 
             params = GearPairParameters(
@@ -272,7 +280,7 @@ class GearApp(tk.Tk):
             )
             return params
         except (ValueError, KeyError) as error:
-            messagebox.showerror("Input Error", f"Invalid or missing input value for {error}")
+            messagebox.showerror("Input Error", f"Invalid or missing input value: {error}")
             return None
 
     def run_calculation(self) -> None:
@@ -282,17 +290,17 @@ class GearApp(tk.Tk):
         if not params:
             return
 
-        working_dir = self.vars['working_directory'].get()
-        os.makedirs(working_dir, exist_ok=True)
+        working_dir = config_manager.resolve_working_directory(self.vars['working_directory'].get())
 
         try:
+            os.makedirs(working_dir, exist_ok=True)
             result = gear_core.generate_gear_pair(params)
 
             analysis = result.analysis
             gear1 = result.gear1
             gear2 = result.gear2
 
-            image_exporter.export_gear_pair_to_image(
+            image_path = image_exporter.export_gear_pair_to_image(
                 working_dir,
                 gear1,
                 gear2,
@@ -302,6 +310,7 @@ class GearApp(tk.Tk):
                 params.driven.teeth,
                 params.center_x,
                 params.center_y,
+                filename=self.current_image_path,
             )
 
             dxf_exporter.export_gear_pair_to_dxf(
@@ -318,24 +327,22 @@ class GearApp(tk.Tk):
             self.status_var.set(
                 f"Run: OK. G1 Undercut: {gear1.undercut_status}. G2 Undercut: {gear2.undercut_status}"
             )
-            self.display_result_image()
+            self.display_result_image(image_path)
 
         except Exception as exc:  # pragma: no cover - UI feedback
             messagebox.showerror("Calculation Error", f"An error occurred: {exc}")
             self.status_var.set(f"Run: Failed. {exc}")
 
-    def display_result_image(self) -> None:
+    def display_result_image(self, img_path: str) -> None:
         """Show the generated preview image, if possible."""
 
         if not PIL_AVAILABLE:
             self.status_var.set("Run: OK. Install Pillow (pip install Pillow) for image preview.")
             return
         try:
-            working_dir = self.vars['working_directory'].get()
-            img_path = os.path.join(working_dir, self.current_image_path)
             if os.path.exists(img_path):
                 img = Image.open(img_path)
-                img.thumbnail((500, 500))
+                img.thumbnail((PREVIEW_SIZE, PREVIEW_SIZE))
                 self.result_image = ImageTk.PhotoImage(img)
                 self.image_label.config(image=self.result_image)
             else:
@@ -347,7 +354,7 @@ class GearApp(tk.Tk):
     def save_params_to_file(self) -> None:
         """Persist current UI parameters to disk."""
 
-        working_dir = self.vars['working_directory'].get()
+        working_dir = config_manager.resolve_working_directory(self.vars['working_directory'].get())
         data_to_save = {key: var.get() for key, var in self.vars.items() if key != 'working_directory'}
         success, message = config_manager.save_params(working_dir, data_to_save)
         self.status_var.set(message)
@@ -357,12 +364,15 @@ class GearApp(tk.Tk):
     def load_params_from_file(self) -> None:
         """Populate UI fields from a saved parameter file."""
 
-        working_dir = self.vars['working_directory'].get()
+        working_dir = config_manager.resolve_working_directory(self.vars['working_directory'].get())
         success, data_or_error = config_manager.load_params(working_dir)
         if success and isinstance(data_or_error, dict):
+            if 'shaper_teeth_n0' in data_or_error:  # key used by FGPG 2.2.x files
+                data_or_error.setdefault('shaper_n0', data_or_error.pop('shaper_teeth_n0'))
             for key, value in data_or_error.items():
                 if key in self.vars:
                     self.vars[key].set(value)
+            self._toggle_shaper_widgets()
             self.status_var.set("Load: OK")
         else:
             messagebox.showerror("Load Error", data_or_error)

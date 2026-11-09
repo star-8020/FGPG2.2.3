@@ -1,228 +1,206 @@
 # -*- coding: utf-8 -*-
+"""Tests for the shaper-cutter root fillet (core/shaper_fillet.py) and its integration."""
 
 import unittest
-from unittest.mock import patch
-import numpy as np
 
-from fine_gear_profile_generator.core.models import GearPairParameters, GearSpec, SegmentationSettings, ShaperCutterParameters
-from fine_gear_profile_generator.core import geometry_generator
-from fine_gear_profile_generator.core import gear_math
-from fine_gear_profile_generator.core.shaper_fillet import compute_shaper_root_fillet
-from fine_gear_profile_generator.core.geometry_generator import rack_trochoid_root_curve
+import numpy as np
+from scipy.spatial.distance import cdist
+
+from fine_gear_profile_generator.core import gear_math, geometry_generator
+from fine_gear_profile_generator.core.models import (
+    Arc,
+    GearPairParameters,
+    GearSpec,
+    SegmentationSettings,
+    ShaperCutterParameters,
+    Spline,
+)
+from fine_gear_profile_generator.core.shaper_fillet import generate_shaper_fillet
+
+MODULE = 1.0
+ALPHA_DEG = 20.0
+BACKLASH = 0.05
+ADDENDUM = 1.0
+DEDENDUM = 1.25
+HOB_EDGE = 0.2
+TIP_EDGE = 0.1
+
+
+def _gear_data(teeth, shift):
+    """Return the quantities shared by the rack and shaper methods for one gear."""
+    (z, x, b, a, d, c, e) = gear_math.handle_internal_gear_parameters(
+        teeth, shift, BACKLASH, ADDENDUM, DEDENDUM, HOB_EDGE, TIP_EDGE
+    )
+    (base_angle, _, flank_base, theta_is, _, _, _, _, _) = gear_math.calculate_gear_parameters(
+        MODULE, z, ALPHA_DEG, x, b, a, d, c, e
+    )
+    alpha_transition = (
+        (2 * (c * (1 - np.sin(base_angle)) - d) * np.sin(base_angle) + b) / (z * np.cos(base_angle))
+        - 2 * c * np.cos(base_angle) / z + np.pi / (2 * z)
+    )
+    theta_end = (
+        2 * c * np.cos(base_angle) / z
+        - 2 * (d - x - c * (1 - np.sin(base_angle))) * np.cos(base_angle) / (z * np.sin(base_angle))
+    )
+    return dict(z=z, x=x, d=d, c=c, base_angle=base_angle, flank_base=flank_base,
+                theta_is=theta_is, alpha_transition=alpha_transition, theta_end=theta_end,
+                root_radius=MODULE * (z / 2 + x - d), rb=0.5 * MODULE * z * np.cos(base_angle))
+
+
+def _shaper(g, n0, protuberance=0.0, samples=200):
+    return generate_shaper_fillet(
+        MODULE, g['z'], g['base_angle'], g['flank_base'], g['root_radius'],
+        n0, g['c'] * MODULE, protuberance * MODULE, samples=samples,
+    )
+
+
+def _rack_points(g, count=20000):
+    return np.array(geometry_generator.rack_trochoid_root_curve(
+        MODULE, g['z'], g['x'], g['d'], g['c'], g['theta_end'], g['alpha_transition'], count
+    ))
+
+
+def _gap_to_involute(g, point):
+    """Arc-length distance of a point from the flank-1 involute (positive = into the tooth)."""
+    r = np.hypot(*point)
+    alpha_r = np.arccos(g['rb'] / r)
+    return (np.arctan2(point[1], point[0]) - g['flank_base'] - (np.tan(alpha_r) - alpha_r)) * r
+
+
+class TestShaperFilletGeometry(unittest.TestCase):
+
+    def test_converges_to_rack_fillet(self):
+        """With n0 -> infinity the shaper fillet must approach the rack (hob) fillet ~ 1/n0."""
+        g = _gear_data(18, 0.2)
+        rack = _rack_points(g)
+        deviations = {}
+        for n0 in (100, 1000, 10000):
+            fillet = _shaper(g, n0).points
+            deviations[n0] = cdist(fillet, rack).min(axis=1).max()
+        self.assertLess(deviations[1000], 5e-3)
+        self.assertLess(deviations[10000], 5e-4)
+        self.assertGreater(deviations[100] / deviations[1000], 5)
+        self.assertGreater(deviations[1000] / deviations[10000], 5)
+
+    def test_fillet_starts_on_root_circle_and_ends_on_involute(self):
+        g = _gear_data(18, 0.2)
+        result = _shaper(g, 40)
+        self.assertTrue(result.tangent_to_involute)
+        self.assertAlmostEqual(np.hypot(*result.points[0]), g['root_radius'], places=10)
+        self.assertAlmostEqual(_gap_to_involute(g, result.points[-1]), 0.0, places=9)
+        # Below the SOI the fillet stays on the space side of the involute (no undercut).
+        for p in result.points[:-1]:
+            if np.hypot(*p) >= g['rb']:
+                self.assertLess(_gap_to_involute(g, p), 1e-9)
+
+    def test_fewer_cutter_teeth_raise_the_start_of_involute(self):
+        g = _gear_data(36, 0.0)
+        soi = [_shaper(g, n0).soi_radius for n0 in (20, 50, 200, 5000)]
+        self.assertTrue(all(a > b for a, b in zip(soi, soi[1:])), soi)
+
+    def test_undercut_matches_rack_intersection(self):
+        g = _gear_data(10, 0.0)
+        self.assertLess(g['theta_is'], 0)  # rack method predicts undercut
+        theta_is, _ = gear_math.solve_undercut_angles(
+            MODULE, g['z'], g['base_angle'], g['x'], g['d'], g['c'],
+            g['flank_base'], g['alpha_transition'], [0.01, g['theta_end']],
+        )
+        rack_soi = g['rb'] * np.sqrt(1 + theta_is ** 2)
+        result = _shaper(g, 100000)
+        self.assertFalse(result.tangent_to_involute)
+        self.assertAlmostEqual(result.soi_radius, rack_soi, delta=1e-4)
+        self.assertAlmostEqual(_gap_to_involute(g, result.points[-1]), 0.0, places=9)
+
+    def test_protuberance_creates_relief_and_raises_soi(self):
+        g = _gear_data(18, 0.2)
+        plain = _shaper(g, 50)
+        relieved = _shaper(g, 50, protuberance=0.03)
+        self.assertTrue(plain.tangent_to_involute)
+        self.assertFalse(relieved.tangent_to_involute)
+        self.assertGreater(relieved.soi_radius, plain.soi_radius)
+
+    def test_infeasible_cutters_are_rejected(self):
+        g = _gear_data(18, 0.2)
+        with self.assertRaises(ValueError):
+            generate_shaper_fillet(MODULE, g['z'], g['base_angle'], g['flank_base'],
+                                   g['root_radius'], 4, 0.2)  # too few teeth
+        with self.assertRaises(ValueError):
+            generate_shaper_fillet(MODULE, g['z'], g['base_angle'], g['flank_base'],
+                                   g['root_radius'], 50, 0.8)  # tip round does not fit
+        with self.assertRaises(ValueError):
+            generate_shaper_fillet(MODULE, -g['z'], g['base_angle'], g['flank_base'],
+                                   g['root_radius'], 50, 0.2)  # internal gear
 
 
 class TestShaperFilletIntegration(unittest.TestCase):
 
-    def setUp(self):
-        """Set up common parameters for testing."""
-        self.segmentation = SegmentationSettings(involute=15, edge=15, root_round=15)
-        self.driver = GearSpec(teeth=18, profile_shift=0.2)
-        self.driven = GearSpec(teeth=36, profile_shift=0.0)
-        self.shaper_cutter_params = ShaperCutterParameters(
-            Pnd0=12, n0=1000, phi_n0_deg=20.0, psi0_deg=22.1,
-            sn0=0.13, da0=9.23, rho0=0.01, delta0=0.0025
-        )
-        self.base_params = {
-            "module": 1.0,
-            "pressure_angle_deg": 20.0,
-            "backlash_factor": 0.05,
-            "addendum_factor": 1.0,
-            "dedendum_factor": 1.25,
-            "hob_edge_radius": 0.2,
-            "tooth_edge_radius": 0.1,
-            "driver": self.driver,
-            "driven": self.driven,
-            "segmentation": self.segmentation,
-        }
-
-    @patch('fine_gear_profile_generator.core.shaper_fillet.compute_shaper_root_fillet')
-    def test_shaper_fillet_called_when_method_is_shaper(self, mock_compute_shaper_fillet):
-        """
-        Verify that compute_shaper_root_fillet is called when the method is 'shaper_trochoid'.
-        """
-        # Arrange
-        # Mock the function to return a dummy fillet and SOI data
-        mock_compute_shaper_fillet.return_value = ([[0, 0], [1, 1]], {'diameter': 2.0, 'point': (1,1)})
-
-        params = GearPairParameters(
-            **self.base_params,
-            root_fillet_method='shaper_trochoid',
-            shaper_cutter=self.shaper_cutter_params
+    def _params(self, method, teeth=18, shift=0.2, cutter=None):
+        return GearPairParameters(
+            module=MODULE, pressure_angle_deg=ALPHA_DEG, backlash_factor=BACKLASH,
+            addendum_factor=ADDENDUM, dedendum_factor=DEDENDUM, hob_edge_radius=HOB_EDGE,
+            tooth_edge_radius=TIP_EDGE, driver=GearSpec(teeth, shift), driven=GearSpec(36, 0.0),
+            segmentation=SegmentationSettings(15, 15, 15), root_fillet_method=method,
+            shaper_cutter=cutter,
         )
 
-        # Act
-        geometry_generator.generate_tooth_profile(params=params, gear_type='driver')
+    def _assert_continuous(self, profile):
+        """Consecutive profile elements must share an end point."""
 
-        # Assert
-        mock_compute_shaper_fillet.assert_called_once()
+        def ends(el):
+            if isinstance(el, Spline):
+                return [np.array(el.vertices[0]), np.array(el.vertices[-1])]
+            assert isinstance(el, Arc)
+            return [np.array(el.center) + el.radius * np.array([np.cos(a), np.sin(a)])
+                    for a in (el.start_angle, el.end_angle)]
 
-    @patch('fine_gear_profile_generator.core.shaper_fillet.compute_shaper_root_fillet')
-    def test_normal_tooth_thickness_converted_to_inches(self, mock_compute_shaper_root_fillet):
-        """Ensure the normal tooth thickness passed to the shaper fillet is in inches."""
+        for first, second in zip(profile.elements, profile.elements[1:]):
+            gap = min(np.hypot(*(p - q)) for p in ends(first) for q in ends(second))
+            self.assertLess(gap, 1e-9, f"gap between {type(first).__name__} and {type(second).__name__}")
 
-        mock_compute_shaper_root_fillet.return_value = ([[0, 0], [1, 1]], {})
+    def test_profile_is_continuous_for_both_methods(self):
+        for method, teeth, shift in [
+            ('rack_trochoid', 18, 0.2), ('shaper_trochoid', 18, 0.2),
+            ('rack_trochoid', 10, 0.0), ('shaper_trochoid', 10, 0.0),
+        ]:
+            with self.subTest(method=method, teeth=teeth):
+                profile, *_ = geometry_generator.generate_tooth_profile(
+                    self._params(method, teeth, shift, ShaperCutterParameters(teeth=40)), 'driver'
+                )
+                self._assert_continuous(profile)
 
-        params = GearPairParameters(
-            **self.base_params,
-            root_fillet_method='shaper_trochoid',
-            shaper_cutter=self.shaper_cutter_params
+    def test_shaper_profile_differs_from_rack_for_small_cutter(self):
+        rack, *_ = geometry_generator.generate_tooth_profile(self._params('rack_trochoid'), 'driver')
+        shaper, *_ = geometry_generator.generate_tooth_profile(
+            self._params('shaper_trochoid', cutter=ShaperCutterParameters(teeth=20)), 'driver'
         )
+        rack_fillet = np.array(rack.elements[5].vertices[:15])
+        shaper_fillet = np.array(shaper.elements[5].vertices[:15])
+        self.assertGreater(np.abs(rack_fillet - shaper_fillet).max(), 1e-3)
 
-        geometry_generator.generate_tooth_profile(params=params, gear_type='driver')
-
-        self.assertTrue(mock_compute_shaper_root_fillet.called)
-        gear_dict = mock_compute_shaper_root_fillet.call_args[0][0]
-
-        (
-            _, shift_calc, backlash_calc, _, _, _, _
-        ) = gear_math.handle_internal_gear_parameters(
-            params.driver.teeth,
-            params.driver.profile_shift,
-            params.backlash_factor,
-            params.addendum_factor,
-            params.dedendum_factor,
-            params.hob_edge_radius,
-            params.tooth_edge_radius,
+    def test_default_cutter_used_when_parameters_missing(self):
+        profile, *_, status = geometry_generator.generate_tooth_profile(
+            self._params('shaper_trochoid', cutter=None), 'driver'
         )
+        self.assertEqual(status, "OK")
+        self._assert_continuous(profile)
 
-        phi_t = np.arctan(np.tan(np.radians(params.pressure_angle_deg)))
-        expected_sn = (
-            params.module * (np.pi / 2 + 2 * shift_calc * np.tan(phi_t))
-            - backlash_calc / 2
-        ) / 25.4
-
-        self.assertAlmostEqual(gear_dict['sn'], expected_sn)
-
-    @patch('fine_gear_profile_generator.core.geometry_generator.rack_trochoid_root_curve')
-    def test_rack_trochoid_called_when_method_is_rack(self, mock_rack_trochoid_root_curve):
-        """
-        Verify that the classic rack_trochoid_root_curve is called for the 'rack_trochoid' method.
-        """
-        # Arrange
-        mock_rack_trochoid_root_curve.return_value = [[0, 0], [1, 1]]
-        params = GearPairParameters(
-            **self.base_params,
-            root_fillet_method='rack_trochoid',
-            shaper_cutter=None # No shaper params needed
+    def test_undercut_status_reported(self):
+        *_, status = geometry_generator.generate_tooth_profile(
+            self._params('shaper_trochoid', 10, 0.0, ShaperCutterParameters(teeth=40)), 'driver'
         )
+        self.assertEqual(status, "Corrected")
 
-        # Act
-        geometry_generator.generate_tooth_profile(params=params, gear_type='driver')
+    def test_internal_gear_rejected_for_shaper_method(self):
+        with self.assertRaisesRegex(ValueError, "external gears only"):
+            geometry_generator.generate_tooth_profile(
+                self._params('shaper_trochoid', -40, 0.0), 'driver'
+            )
 
-        # Assert
-        mock_rack_trochoid_root_curve.assert_called_once()
-
-    def test_raises_error_if_shaper_params_missing(self):
-        """
-        Verify that a ValueError is raised if 'shaper_trochoid' is selected
-        but shaper_cutter parameters are not provided.
-        """
-        # Arrange
-        params = GearPairParameters(
-            **self.base_params,
-            root_fillet_method='shaper_trochoid',
-            shaper_cutter=None # Missing parameters
-        )
-
-        # Act & Assert
-        with self.assertRaisesRegex(ValueError, "Shaper cutter parameters must be provided"):
-            geometry_generator.generate_tooth_profile(params=params, gear_type='driver')
-
-    def test_shaper_fillet_converges_to_rack_fillet(self):
-        """
-        Verify that the shaper fillet converges to the rack trochoid as the
-        shaper cutter's number of teeth approaches infinity, as described
-        in README.md.
-        """
-        # 1. Test Parameters (using module system, lengths in mm)
-        module = 1.0
-        pressure_angle_deg = 20.0
-        backlash_factor = 0.05
-        addendum_factor = 1.0
-        dedendum_factor = 1.25
-        hob_edge_radius_factor = 0.2 # As a factor of module
-
-        gear_spec = self.driver # teeth=18, profile_shift=0.2
-        segment_count = 100 # Number of points for curve generation
-
-        # 2. Calculate Rack Fillet (Reference Curve in mm)
-        (teeth_calc, shift_calc, backlash_calc, _, dedendum_calc,
-         hob_edge_calc, tooth_edge_calc) = gear_math.handle_internal_gear_parameters(
-            gear_spec.teeth, gear_spec.profile_shift, backlash_factor, addendum_factor,
-            dedendum_factor, hob_edge_radius_factor, 0.1
-        )
-
-        (base_angle, _, _, _, _, _, _, _, _,) = gear_math.calculate_gear_parameters(
-            module, teeth_calc, pressure_angle_deg, shift_calc, backlash_calc,
-            addendum_factor, dedendum_calc, hob_edge_calc, tooth_edge_calc,
-        )
-
-        alpha_transition = (
-            (2 * (hob_edge_calc * (1 - np.sin(base_angle)) - dedendum_calc) * np.sin(base_angle) + backlash_calc)
-            / (teeth_calc * np.cos(base_angle))
-            - 2 * hob_edge_calc * np.cos(base_angle) / teeth_calc + np.pi / (2 * teeth_calc)
-        )
-        theta_end = (
-            2 * hob_edge_calc * np.cos(base_angle) / teeth_calc
-            - 2 * (dedendum_calc - shift_calc - hob_edge_calc * (1 - np.sin(base_angle)))
-            * np.cos(base_angle) / (teeth_calc * np.sin(base_angle))
-        )
-
-        rack_fillet_mm = rack_trochoid_root_curve(
-            module, teeth_calc, shift_calc, dedendum_calc, hob_edge_calc,
-            theta_end, alpha_transition, segment_count,
-        )
-        rack_fillet_in = np.array(rack_fillet_mm) / 25.4
-
-        # 3. Calculate Shaper Fillet (Test Curve in inches)
-        shaper_n0 = 10000
-        pnd = 25.4 / module
-        phi_t = np.arctan(np.tan(np.radians(pressure_angle_deg)))
-        # Correctly calculate normal tooth thickness, accounting for backlash
-        sn_mm = module * (np.pi / 2 + 2 * shift_calc * np.tan(phi_t)) - backlash_calc / 2
-
-        gear_dict = {
-            'Pnd': pnd, 'n': teeth_calc, 'φn': pressure_angle_deg, 'ψ': 0, 'sn': sn_mm / 25.4,
-        }
-        tool_dict = {
-            'Pnd0': pnd, 'n0': shaper_n0, 'phi_n0_deg': pressure_angle_deg, 'psi0_deg': 0,
-            'sn0': (np.pi / 2) / pnd,
-            'da0': (shaper_n0 + 2 * addendum_factor) / pnd,
-            'rho0': hob_edge_radius_factor * module / 25.4,
-            'delta0': 0.0,
-        }
-        opts_dict = {'ds': 0.0001}
-
-        shaper_fillet_in_raw, _ = compute_shaper_root_fillet(gear_dict, tool_dict, opts_dict)
-
-        # 4. Align coordinate systems by rotating the shaper fillet
-        # The rack trochoid is generated with a starting angle of alpha_transition.
-        # We must rotate the shaper fillet to match this orientation for a valid comparison.
-        rot_matrix = np.array([
-            [np.cos(alpha_transition), -np.sin(alpha_transition)],
-            [np.sin(alpha_transition),  np.cos(alpha_transition)]
-        ])
-        shaper_fillet_in = np.dot(shaper_fillet_in_raw, rot_matrix.T)
-
-        # 5. Compare Curves using one-sided Hausdorff distance
-        try:
-            from scipy.spatial.distance import cdist
-            # Ensure both arrays are not empty before comparison
-            if shaper_fillet_in.size == 0 or rack_fillet_in.size == 0:
-                self.fail("Fillet generation resulted in an empty array.")
-            distances = cdist(shaper_fillet_in, rack_fillet_in)
-            max_deviation = np.max(np.min(distances, axis=1))
-        except ImportError:
-            max_dev_sq = 0.0
-            for p1 in shaper_fillet_in:
-                min_dist_sq = min(np.sum((p1 - p2)**2) for p2 in rack_fillet_in)
-                if min_dist_sq > max_dev_sq:
-                    max_dev_sq = min_dist_sq
-            max_deviation = np.sqrt(max_dev_sq)
-
-        # From README, for n0=10000, deviation is ~0.000011 inches.
-        # We use a slightly larger tolerance for robustness.
-        self.assertLess(max_deviation, 5e-5, "Shaper fillet should converge to rack fillet for large n0")
+    def test_invalid_cutter_parameters(self):
+        with self.assertRaises(ValueError):
+            ShaperCutterParameters(teeth=3)
+        with self.assertRaises(ValueError):
+            ShaperCutterParameters(teeth=40, protuberance_factor=-0.1)
 
 
 if __name__ == '__main__':

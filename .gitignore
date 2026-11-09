@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# FGPG outputs
+result/
+fine_gear_profile_generator/result/
+Inputs.dat
+temp_test_output/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

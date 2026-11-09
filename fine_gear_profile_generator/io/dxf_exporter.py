@@ -3,15 +3,17 @@
 from __future__ import annotations
 
 import os
-from typing import Union
 
 import ezdxf
+from ezdxf import units
 import numpy as np
 from ezdxf.layouts import Modelspace
 from ezdxf.math import Vec3
 
 from ..core import transformations
 from ..core.models import Arc, GearProfileGeometry, Spline, StructuredToothProfile
+
+DEFAULT_DXF_FILENAME = 'Result_Gear_Pair.dxf'
 
 
 def rad2deg(rad: float) -> float:
@@ -69,9 +71,18 @@ def export_gear_pair_to_dxf(
     center_dist: float,
     x_offset: float,
     y_offset: float,
-) -> None:
-    """Export the supplied gear pair geometry to a DXF file."""
+    filename: str = DEFAULT_DXF_FILENAME,
+) -> str:
+    """Export the supplied gear pair geometry to a DXF file (units: mm).
+
+    Returns:
+        The path of the written DXF file.
+
+    Raises:
+        OSError: If the file cannot be written.
+    """
     doc = ezdxf.new('R2000')
+    doc.units = units.MM
     msp = doc.modelspace()
 
     # Process Gear 1
@@ -98,8 +109,6 @@ def export_gear_pair_to_dxf(
                 y_offset=y_offset,
             )
 
-    output_path = os.path.join(working_dir, 'Result_Gear_Pair.dxf')
-    try:
-        doc.saveas(output_path)
-    except IOError:  # pragma: no cover - filesystem errors
-        print(f"Error: Could not save DXF file to {output_path}.")
+    output_path = os.path.join(working_dir, filename)
+    doc.saveas(output_path)
+    return output_path

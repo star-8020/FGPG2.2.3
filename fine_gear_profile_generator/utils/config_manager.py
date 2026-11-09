@@ -32,31 +32,16 @@ FALLBACK_DEFAULTS = {
     'seg_involute': 15,
     'seg_edge_r': 15,
     'seg_root_r': 15,
+    'root_fillet_method': 'rack_trochoid',
     'working_directory': './result/',
     'current_image_path': 'Result1.png'
 }
 
-UI_TO_CALCULATION_MAP = {
-    'module_m': 'M',
-    'teeth_number_z': 'Z',
-    'pressure_angle_alpha': 'ALPHA',
-    'offset_factor_x': 'X',
-    'backlash_factor_b': 'B',
-    'addendum_factor_a': 'A',
-    'dedendum_factor_d': 'D',
-    'hob_edge_radius_c': 'C',
-    'tooth_edge_radius_e': 'E',
-    'x_0': 'X_0',
-    'y_0': 'Y_0',
-    'seg_involute': 'SEG_INVOLUTE',
-    'seg_edge_r': 'SEG_EDGE_R',
-    'seg_root_r': 'SEG_ROOT_R',
-    'teeth_number_z2': 'z2',
-    'offset_factor_x2': 'x2'
-}
-
-INT_PARAM_KEYS = {
-    'Z', 'SEG_INVOLUTE', 'SEG_EDGE_R', 'SEG_ROOT_R', 'z2'
+SHAPER_FALLBACK_DEFAULTS = {
+    'n0': 50,
+    'tip_radius_factor': None,
+    'protuberance_factor': 0.0,
+    'profile_shift_x0': 0.0,
 }
 
 
@@ -84,7 +69,7 @@ def load_app_config(path: str | None = None) -> Dict[str, object]:
 def get_defaults(config_data: Dict[str, object] | None = None) -> Dict[str, object]:
     """Return merged default values using configuration data with fallbacks."""
 
-    config = config_data or load_app_config()
+    config = load_app_config() if config_data is None else config_data
     defaults = dict(FALLBACK_DEFAULTS)
     defaults.update(config.get('defaults', {}))
     return defaults
@@ -114,10 +99,37 @@ def _build_gear_specs(defaults: Dict[str, object]) -> Tuple[GearSpec, GearSpec]:
     return driver, driven
 
 
+def get_shaper_defaults(config_data: Dict[str, object] | None = None) -> Dict[str, object]:
+    """Return the shaper cutter defaults merged with the built-in fallbacks."""
+
+    config = load_app_config() if config_data is None else config_data
+    merged = dict(SHAPER_FALLBACK_DEFAULTS)
+    merged.update(config.get('shaper_cutter_defaults', {}) or {})
+    return merged
+
+
+def build_shaper_cutter_parameters(values: Dict[str, object]) -> ShaperCutterParameters:
+    """Create :class:`ShaperCutterParameters` from config/UI style values.
+
+    ``tip_radius_factor`` may be ``None`` or an empty string, meaning "use the
+    hob edge radius factor c".
+    """
+
+    tip = values.get('tip_radius_factor', SHAPER_FALLBACK_DEFAULTS['tip_radius_factor'])
+    if tip is not None and str(tip).strip() == '':
+        tip = None
+    return ShaperCutterParameters(
+        teeth=int(float(values.get('n0', SHAPER_FALLBACK_DEFAULTS['n0']))),
+        tip_radius_factor=None if tip is None else float(tip),
+        protuberance_factor=float(values.get('protuberance_factor', 0.0) or 0.0),
+        profile_shift=float(values.get('profile_shift_x0', 0.0) or 0.0),
+    )
+
+
 def get_default_gear_pair_parameters(config_data: Dict[str, object] | None = None) -> GearPairParameters:
     """Build a ``GearPairParameters`` instance populated with default values."""
 
-    config = config_data or load_app_config()
+    config = load_app_config() if config_data is None else config_data
     defaults = get_defaults(config)
     segmentation = _build_segmentation(defaults)
     driver, driven = _build_gear_specs(defaults)
@@ -126,17 +138,7 @@ def get_default_gear_pair_parameters(config_data: Dict[str, object] | None = Non
 
     shaper_cutter_params = None
     if root_fillet_method == 'shaper_trochoid':
-        shaper_defaults = config.get('shaper_cutter_defaults', {})
-        shaper_cutter_params = ShaperCutterParameters(
-            Pnd0=float(shaper_defaults.get('Pnd0', 12)),
-            n0=int(shaper_defaults.get('n0', 1000)),
-            phi_n0_deg=float(shaper_defaults.get('phi_n0_deg', 20.0)),
-            psi0_deg=float(shaper_defaults.get('psi0_deg', 22.1)),
-            sn0=float(shaper_defaults.get('sn0', 0.13)),
-            da0=float(shaper_defaults.get('da0', 9.23)),
-            rho0=float(shaper_defaults.get('rho0', 0.01)),
-            delta0=float(shaper_defaults.get('delta0', 0.0025)),
-        )
+        shaper_cutter_params = build_shaper_cutter_parameters(get_shaper_defaults(config))
 
     return GearPairParameters(
         module=float(defaults.get('module_m', FALLBACK_DEFAULTS['module_m'])),
@@ -168,6 +170,19 @@ def get_default_working_directory(config_data: Dict[str, object] | None = None) 
 
     defaults = get_defaults(config_data)
     return str(defaults.get('working_directory', FALLBACK_DEFAULTS['working_directory']))
+
+
+def resolve_working_directory(path: str) -> str:
+    """Resolve a working directory; relative paths are relative to the project root.
+
+    The project root is the folder that holds ``config.json``.  Using it for
+    both the GUI and the headless mode makes the output location independent
+    of the directory the program was started from.
+    """
+
+    if os.path.isabs(path):
+        return path
+    return os.path.normpath(os.path.join(os.path.dirname(get_config_path()), path))
 
 
 def save_params(working_dir: str, params_dict: Dict[str, object]) -> Tuple[bool, str]:

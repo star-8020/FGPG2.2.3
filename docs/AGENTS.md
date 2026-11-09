@@ -1,3 +1,9 @@
+> **Status (FGPG 2.2.3):** this was an early sketch and is **not** the implemented algorithm.
+> Known problems: residual `F4` is identically zero, and the "involute" in section 3
+> (`r = rb·sqrt(1+tan²φ)` at polar angle `φ`) is the straight line `x = rb`.
+> The implemented shaper-cutter fillet is documented in `README.md` and
+> `fine_gear_profile_generator/core/shaper_fillet.py`.
+
 # Newton–Elliptical Shaper Solver Implementation Guide
 
 > **Goal:** A simple but plausible, standard shaper-cutter based, ready-to-implement blueprint for solving elliptical cutter tip geometry using a vectorized Newton solver.
