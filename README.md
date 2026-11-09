@@ -52,8 +52,29 @@ python -m fine_gear_profile_generator.main --headless
 python -m fine_gear_profile_generator.main --headless --fillet-method shaper_trochoid --cutter-teeth 30 --output-dir out
 ```
 
-The program writes `Result1.png` and `Result_Gear_Pair.dxf` (DXF units: mm). A relative
-working directory is resolved against the repository root, for both GUI and headless runs.
+### Output files
+
+Every run writes three files with the same, unique base name that holds the main gear data
+and a time stamp:
+
+```
+FGPG_m2_z21x0.2_z36x0_rack_20261109-153012.png    preview
+FGPG_m2_z21x0.2_z36x0_rack_20261109-153012.dxf    CAD geometry (mm)
+FGPG_m2_z21x0.2_z36x0_rack_20261109-153012.json   inputs + results of this run
+```
+
+Pattern: `FGPG_m<module>_z<z1>x<x1>_z<z2>x<x2>_<rack | shaper-n<n0>>_<date-time>`. Earlier
+results are never overwritten. If two runs fall in the same second, `_2`, `_3` … is
+appended. Headless runs can choose the name with `--name`.
+
+In the GUI:
+- **Load** opens a parameter file or any result `.json`, so a result's inputs can be
+  restored. Old `Inputs.dat` files also load.
+- **Save** asks for a file name and suggests one from the gear data.
+- **Open Folder** shows the result folder.
+
+A relative working directory is resolved against the repository root, for both GUI and
+headless runs.
 
 **Tests**
 
@@ -157,7 +178,8 @@ fine_gear_profile_generator/
     gear_core.py          orchestrates a gear pair
   io/                     DXF (ezdxf) and PNG (matplotlib) export
   gui/fgpg_gui.py         Tkinter GUI
-  utils/config_manager.py config.json and Inputs.dat handling
+  utils/config_manager.py config.json and parameter files
+  utils/output_naming.py  unique result file names and run records
   tests/                  pytest / unittest suite
 docs/                     design notes
 ```
