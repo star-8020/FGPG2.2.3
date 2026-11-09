@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import List, Tuple, Union
+from typing import List, Optional, Tuple, Union
 
 import numpy as np
 
@@ -23,26 +23,6 @@ def involute_curve(
     """Generate the involute flank curve."""
     theta_values = np.linspace(theta_start, theta_end, segment_count)
     x_coords, y_coords = gear_math.get_involute_coords(theta_values, module, teeth, base_angle, start_angle)
-    return list(zip(x_coords, y_coords))
-
-
-def edge_round_curve(
-    module: float,
-    tooth_edge_radius: float,
-    flank_vertices: List[Tuple[float, float]],
-    edge_x: float,
-    edge_y: float,
-    edge_center_x: float,
-    edge_center_y: float,
-    segment_count: int,
-) -> List[Tuple[float, float]]:
-    """Generate the rounded edge curve at the tooth tip."""
-    last_flank_vertex = flank_vertices[-1]
-    theta_min = np.arctan2(last_flank_vertex[1] - edge_center_y, last_flank_vertex[0] - edge_center_x)
-    theta_max = np.arctan2(edge_y - edge_center_y, edge_x - edge_center_x)
-    theta_values = np.linspace(theta_min, theta_max, segment_count)
-    x_coords = module * tooth_edge_radius * np.cos(theta_values) + edge_center_x
-    y_coords = module * tooth_edge_radius * np.sin(theta_values) + edge_center_y
     return list(zip(x_coords, y_coords))
 
 
@@ -96,6 +76,21 @@ def generate_tooth_profile(
         params.dedendum_factor, params.hob_edge_radius, params.tooth_edge_radius
     )
 
+    notes: List[str] = []
+    method = params.fillet_method_for(gear_type)
+    if method == 'shaper_trochoid' and gear_spec.teeth < 0:
+        notes.append("Internal gear: the shaper-cutter fillet is not available yet, "
+                     "the rack fillet is used.")
+        method = 'rack_trochoid'
+
+    # Narrow or pointed tips: shrink the tip round / top the tip instead of
+    # producing a folded outline.
+    addendum_calc, tooth_edge_calc, tip_notes = gear_math.fit_tooth_tip(
+        teeth_calc, params.pressure_angle_deg, shift_calc, backlash_calc,
+        addendum_calc, tooth_edge_calc,
+    )
+    notes.extend(tip_notes)
+
     (
         base_angle, mid_angle, involute_start_angle, involute_theta_start, involute_theta_end,
         edge_angle, tooth_edge_calc, pitch_angle, alignment_angle,
@@ -106,11 +101,7 @@ def generate_tooth_profile(
 
     root_radius = params.module * (teeth_calc / 2 - dedendum_calc + shift_calc)
 
-    if params.root_fillet_method == 'shaper_trochoid':
-        if gear_spec.teeth < 0:
-            raise ValueError(
-                "The 'shaper_trochoid' fillet method currently supports external gears only."
-            )
+    if method == 'shaper_trochoid':
         cutter = params.shaper_cutter or ShaperCutterParameters()
         tip_factor = hob_edge_calc if cutter.tip_radius_factor is None else cutter.tip_radius_factor
         fillet = shaper_fillet_generator.generate_shaper_fillet(
@@ -167,45 +158,53 @@ def generate_tooth_profile(
         params.module, teeth_calc, params.segmentation.involute,
         involute_theta_start, involute_theta_end, base_angle, involute_start_angle,
     )
-    if params.root_fillet_method == 'shaper_trochoid':
+    if method == 'shaper_trochoid':
         # Make the junction exact (the fillet end lies on the involute to ~1e-12).
         flank1_vertices[0] = root1_vertices[-1]
 
-    edge_x = params.module * ((teeth_calc / 2) + shift_calc + addendum_calc) * np.cos(edge_angle)
-    edge_y = params.module * ((teeth_calc / 2) + shift_calc + addendum_calc) * np.sin(edge_angle)
-    edge_center_x = params.module * (teeth_calc / 2 + shift_calc + addendum_calc - tooth_edge_calc) * np.cos(edge_angle)
-    edge_center_y = params.module * (teeth_calc / 2 + shift_calc + addendum_calc - tooth_edge_calc) * np.sin(edge_angle)
+    tip_radius = params.module * (teeth_calc / 2 + shift_calc + addendum_calc)
+    edge_radius = params.module * tooth_edge_calc
 
-    edge1_vertices = edge_round_curve(
-        params.module, tooth_edge_calc, flank1_vertices,
-        edge_x, edge_y, edge_center_x, edge_center_y, params.segmentation.edge,
-    )
-    edge2_vertices = transformations.reflect_y_vertices(edge1_vertices)
+    # Tip round: a true circular arc tangent to the involute and the tip circle.
+    edge1: Optional[Arc] = None
+    if edge_radius > 0:
+        centre = (tip_radius - edge_radius) * np.array([np.cos(edge_angle), np.sin(edge_angle)])
+        tangent_point = np.array(flank1_vertices[-1])
+        start = float(np.arctan2(*(tangent_point - centre)[::-1]))
+        end = float(edge_angle)
+        while end < start:
+            end += 2 * np.pi
+        edge1 = Arc(center=(float(centre[0]), float(centre[1])), radius=float(edge_radius),
+                    start_angle=start, end_angle=end)
+        # Snap the flank end onto the arc (it lies on it to rounding error).
+        flank1_vertices[-1] = (float(centre[0] + edge_radius * np.cos(start)),
+                               float(centre[1] + edge_radius * np.sin(start)))
 
-    outer1_arc = outer_arc(
-        params.module, teeth_calc, shift_calc, addendum_calc, edge_angle, mid_angle
-    )
-    outer2_arc = transformations.reflect_y_arc(outer1_arc)
-
+    outer1 = outer_arc(params.module, teeth_calc, shift_calc, addendum_calc, edge_angle, mid_angle)
     root1_arc = root_arc(params.module, teeth_calc, shift_calc, dedendum_calc, root_end_angle)
-    root2_arc = transformations.reflect_y_arc(root1_arc)
+
+    def mirrored(arc: Optional[Arc]) -> Optional[Arc]:
+        return transformations.reflect_y_arc(arc) if arc is not None else None
+
+    if outer1.end_angle - outer1.start_angle <= 1e-12:
+        outer1 = None  # the two tip rounds (or flanks) meet on the centre line
 
     if undercut_status == "OK":
-        profile1_vertices = root1_vertices + flank1_vertices[1:]
-        profile2_vertices = transformations.reflect_y_vertices(profile1_vertices)
-        elements = [
-            outer2_arc, Spline(vertices=edge2_vertices), Spline(vertices=list(reversed(profile2_vertices))),
-            root2_arc, root1_arc, Spline(vertices=profile1_vertices), Spline(vertices=edge1_vertices), outer1_arc,
-        ]
+        profile1 = Spline(vertices=root1_vertices + flank1_vertices[1:])
+        profile2 = Spline(vertices=list(reversed(
+            transformations.reflect_y_vertices(profile1.vertices))))
+        side1 = [root1_arc, profile1, edge1, outer1]
+        side2 = [mirrored(outer1), mirrored(edge1), profile2, mirrored(root1_arc)]
     else:
-        flank2_vertices = transformations.reflect_y_vertices(flank1_vertices)
-        root2_vertices = transformations.reflect_y_vertices(root1_vertices)
-        elements = [
-            outer2_arc, Spline(vertices=edge2_vertices), Spline(vertices=flank2_vertices),
-            Spline(vertices=root2_vertices), root2_arc, root1_arc, Spline(vertices=root1_vertices),
-            Spline(vertices=flank1_vertices), Spline(vertices=edge1_vertices), outer1_arc,
-        ]
+        root1 = Spline(vertices=root1_vertices)
+        flank1 = Spline(vertices=flank1_vertices)
+        side1 = [root1_arc, root1, flank1, edge1, outer1]
+        side2 = [mirrored(outer1), mirrored(edge1),
+                 Spline(vertices=transformations.reflect_y_vertices(flank1_vertices)),
+                 Spline(vertices=transformations.reflect_y_vertices(root1_vertices)),
+                 mirrored(root1_arc)]
+    elements = [el for el in side2 + side1 if el is not None]
 
-    structured_profile = StructuredToothProfile(elements=elements)
+    structured_profile = StructuredToothProfile(elements=elements, notes=notes, tip_radius=float(tip_radius))
 
     return structured_profile, float(teeth_calc), float(pitch_angle), float(alignment_angle), undercut_status

@@ -190,11 +190,24 @@ class TestShaperFilletIntegration(unittest.TestCase):
         )
         self.assertEqual(status, "Corrected")
 
-    def test_internal_gear_rejected_for_shaper_method(self):
-        with self.assertRaisesRegex(ValueError, "external gears only"):
-            geometry_generator.generate_tooth_profile(
-                self._params('shaper_trochoid', -40, 0.0), 'driver'
-            )
+    def test_internal_gear_falls_back_to_rack_with_note(self):
+        profile, *_ = geometry_generator.generate_tooth_profile(
+            self._params('shaper_trochoid', -40, 0.0), 'driver'
+        )
+        self.assertTrue(any('Internal gear' in n for n in profile.notes))
+        self._assert_continuous(profile)
+
+    def test_fillet_method_per_gear(self):
+        params = self._params('rack_trochoid', cutter=ShaperCutterParameters(teeth=20))
+        params.driven_fillet_method = 'shaper_trochoid'
+        self.assertEqual(params.fillet_method_for('driver'), 'rack_trochoid')
+        self.assertEqual(params.fillet_method_for('driven'), 'shaper_trochoid')
+        rack_only = self._params('rack_trochoid')
+        gear2_rack, *_ = geometry_generator.generate_tooth_profile(rack_only, 'driven')
+        gear2_shaper, *_ = geometry_generator.generate_tooth_profile(params, 'driven')
+        a = np.array(gear2_rack.elements[5].vertices[:10])
+        b = np.array(gear2_shaper.elements[5].vertices[:10])
+        self.assertGreater(np.abs(a - b).max(), 1e-3)
 
     def test_invalid_cutter_parameters(self):
         with self.assertRaises(ValueError):

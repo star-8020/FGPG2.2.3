@@ -93,7 +93,9 @@ Xvfb). It also runs `install_windows.bat` on a Windows runner.
 
 `defaults` holds the gear parameters (module, teeth, pressure angle, profile shift, backlash,
 addendum/dedendum factors, hob edge radius `c`, tip edge radius `e`, mating gear, segment
-counts, working directory) and `root_fillet_method`.
+counts, working directory) and `root_fillet_method`. Gear 2 can use its own method with
+`root_fillet_method_2` (`null` = same as gear 1). In the GUI it is the *Fillet Method*
+field of the mating gear.
 
 `shaper_cutter_defaults` is used when `root_fillet_method` is `shaper_trochoid`:
 
@@ -139,8 +141,8 @@ transverse plane.
    the fillet up to its intersection with the involute and is reported as
    "Undercut (profile corrected)". This is the same treatment as the rack method.
 
-Only external spur gears are supported by this method. Internal gears with
-`shaper_trochoid` raise a clear error.
+Only external spur gears are supported by this method. If an internal gear is set to
+`shaper_trochoid`, the rack fillet is used for it and a warning is shown.
 
 ### Validation (measured by `tests/test_shaper_fillet.py`)
 
@@ -184,10 +186,29 @@ fine_gear_profile_generator/
 docs/                     design notes
 ```
 
+## Tooth tip, internal gears and warnings
+
+- **Tip round:** the tip round (`e·m`) is exported as a true ARC, tangent to the involute and
+  the tip circle.
+- **Narrow or pointed tips** are corrected automatically, and the change is reported as a
+  warning (orange text in the GUI, `Warning:` lines in headless mode, `gearN_notes` in the
+  run record):
+  - If the tip round does not fit on a narrow tip, its radius is reduced until the two rounds
+    meet on the tooth centre line.
+  - If the flanks cross before the tip circle (a pointed tooth), the tip circle is reduced to
+    the point where they meet, and the tip round is removed. The contact ratio then uses the
+    reduced tip.
+- **Internal gears** use a negative tooth number for the ring gear, with the signed
+  convention of ISO 21771. The ring tip radius is `m·(|z|/2 − a − x)`.
+  - The contact ratio uses the internal-pair path of contact. Example: z1 = 18 with
+    z2 = −60 at x = 0 gives 1.9361.
+  - The centre distance is shown as a positive value marked "internal".
+  - Profile-shift combinations that cannot mesh raise a clear error.
+
 ## Known limitations
 
 - Spur gears only (no helix angle).
-- The contact ratio of internal gear pairs uses the external-gear formula.
+- The shaper-cutter fillet is not available for internal gears yet (the rack fillet is used).
 - Protuberance is modelled as a tip round shifted towards the flank. The finite length of a
   real protuberance flank is not modelled.
 

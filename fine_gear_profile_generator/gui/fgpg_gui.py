@@ -44,11 +44,12 @@ SHAPER_FIELDS = [
     ("profile_shift_x0", "Cutter Offset, x0", ""),
 ]
 
+SAME_AS_GEAR1 = "same as gear 1"
+
 GRAPHIC_FIELDS = [
     ("x_0", "Center, x_0", "[mm]"),
     ("y_0", "Center, y_0", "[mm]"),
     ("seg_involute", "Seg, involute", "[ea]"),
-    ("seg_edge_r", "Seg, edge_r", "[ea]"),
     ("seg_root_r", "Seg, root_r", "[ea]")
 ]
 
@@ -149,7 +150,8 @@ class GearApp(tk.Tk):
 
     def _toggle_shaper_widgets(self, event=None) -> None:
         """Show or hide the shaper cutter widgets based on the selected fillet method."""
-        if self.vars['root_fillet_method'].get() == 'shaper_trochoid':
+        methods = {self.vars['root_fillet_method'].get(), self.vars['root_fillet_method_2'].get()}
+        if 'shaper_trochoid' in methods:
             self.shaper_frame.grid(row=1, column=0, sticky="ew", pady=5)
         else:
             self.shaper_frame.grid_remove()
@@ -162,6 +164,15 @@ class GearApp(tk.Tk):
         for i, (key, label, unit) in enumerate(MATING_FIELDS):
             default_val = self.defaults.get(key)
             self.create_entry(frame, i, key, label, default_val, unit)
+
+        row_index = len(MATING_FIELDS)
+        ttk.Label(frame, text="Fillet Method =").grid(row=row_index, column=0, sticky="w", pady=5)
+        var = tk.StringVar(value=self.defaults.get('root_fillet_method_2') or SAME_AS_GEAR1)
+        self.vars['root_fillet_method_2'] = var
+        combo = ttk.Combobox(frame, textvariable=var, values=[SAME_AS_GEAR1, *FILLET_METHODS],
+                             state="readonly", width=15)
+        combo.grid(row=row_index, column=1, columnspan=2, padx=5, sticky="w")
+        combo.bind("<<ComboboxSelected>>", self._toggle_shaper_widgets)
 
     def create_analysis_widgets(self, parent: ttk.Frame) -> None:
         """Create static fields for presenting calculation results."""
@@ -211,7 +222,12 @@ class GearApp(tk.Tk):
         ttk.Button(btn_frame, text="Exit", command=self.quit).pack(side="left", padx=5)
 
         self.status_var = tk.StringVar(value="Welcome to the Fine Gear Profile Generator!")
-        ttk.Label(parent, textvariable=self.status_var, wraplength=600).grid(row=2, column=0, sticky="ew", pady=5)
+        status = ttk.Frame(parent)
+        status.grid(row=2, column=0, sticky="ew", pady=5)
+        ttk.Label(status, textvariable=self.status_var, wraplength=600).pack(anchor="w")
+        # Automatic corrections (narrow tip, internal-gear fallback, ...) are shown here.
+        self.warning_var = tk.StringVar(value="")
+        ttk.Label(status, textvariable=self.warning_var, wraplength=600, foreground="#b45309").pack(anchor="w")
 
         self.image_label = ttk.Label(parent, text="Image will be displayed here.")
         self.image_label.grid(row=3, column=0, pady=5, sticky="nsew")
@@ -247,7 +263,7 @@ class GearApp(tk.Tk):
         try:
             segmentation = SegmentationSettings(
                 involute=int(self.vars['seg_involute'].get()),
-                edge=int(self.vars['seg_edge_r'].get()),
+                edge=int(self.defaults.get('seg_edge_r', 15)),  # tip rounds are exact arcs
                 root_round=int(self.vars['seg_root_r'].get()),
             )
             driver = GearSpec(
@@ -260,7 +276,9 @@ class GearApp(tk.Tk):
             )
             shaper_params = None
             root_fillet_method = self.vars['root_fillet_method'].get()
-            if root_fillet_method == 'shaper_trochoid':
+            driven_method = self.vars['root_fillet_method_2'].get()
+            driven_method = None if driven_method in ('', SAME_AS_GEAR1) else driven_method
+            if 'shaper_trochoid' in (root_fillet_method, driven_method):
                 shaper_params = config_manager.build_shaper_cutter_parameters(
                     {key: self.vars[f"shaper_{key}"].get() for key, _, _ in SHAPER_FIELDS}
                 )
@@ -279,7 +297,8 @@ class GearApp(tk.Tk):
                 center_x=float(self.vars['x_0'].get()),
                 center_y=float(self.vars['y_0'].get()),
                 root_fillet_method=root_fillet_method,
-                shaper_cutter=shaper_params
+                shaper_cutter=shaper_params,
+                driven_fillet_method=driven_method,
             )
             return params
         except (ValueError, KeyError) as error:
@@ -336,23 +355,27 @@ class GearApp(tk.Tk):
             self.last_output_base = base
 
             self.vars['contact_ratio'].set(f"{analysis.contact_ratio:.4f}")
-            self.vars['center_distance'].set(f"{analysis.center_distance:.4f} mm")
+            internal = " (internal)" if analysis.is_internal else ""
+            self.vars['center_distance'].set(f"{abs(analysis.center_distance):.4f} mm{internal}")
             self.status_var.set(
                 f"Run: OK. Saved {base} (.png .dxf .json)\n"
                 f"G1 Undercut: {gear1.undercut_status}. G2 Undercut: {gear2.undercut_status}"
             )
+            warnings = [f"Gear 1: {n}" for n in gear1.notes] + [f"Gear 2: {n}" for n in gear2.notes]
+            self.warning_var.set("\n".join(f"\u26a0 {w}" for w in warnings))
             self.display_result_image(image_path)
 
         except Exception as exc:  # pragma: no cover - UI feedback
             messagebox.showerror("Calculation Error", f"An error occurred: {exc}")
             self.status_var.set(f"Run: Failed. {exc}")
+            self.warning_var.set("")
 
     def _working_dir(self) -> str:
         return config_manager.resolve_working_directory(self.vars['working_directory'].get())
 
     def _ui_values(self) -> Dict[str, str]:
         """Current input values (without results and the working directory)."""
-        skip = {'working_directory', 'contact_ratio', 'center_distance'}
+        skip = {'working_directory', 'contact_ratio', 'center_distance'}  # results, not inputs
         return {key: var.get() for key, var in self.vars.items() if key not in skip}
 
     def open_working_directory(self) -> None:

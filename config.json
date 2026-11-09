@@ -11,6 +11,7 @@
     "addendum_factor_a": 1.0,
     "dedendum_factor_d": 1.25,
     "root_fillet_method": "rack_trochoid",
+    "root_fillet_method_2": null,
     "hob_edge_radius_c": 0.2,
     "tooth_edge_radius_e": 0.1,
     "teeth_number_z2": 36,

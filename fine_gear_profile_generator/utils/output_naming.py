@@ -27,10 +27,15 @@ def _num(value: float) -> str:
 def describe_parameters(params: GearPairParameters) -> str:
     """Short, file-name safe description of a gear pair, e.g. ``m2_z21x0.2_z36x0_rack``."""
 
-    method = "rack"
-    if params.root_fillet_method == 'shaper_trochoid':
-        teeth = params.shaper_cutter.teeth if params.shaper_cutter else 50
-        method = f"shaper-n{teeth}"
+    def short(method_name: str) -> str:
+        if method_name == 'shaper_trochoid':
+            teeth = params.shaper_cutter.teeth if params.shaper_cutter else 50
+            return f"shaper-n{teeth}"
+        return "rack"
+
+    method = short(params.fillet_method_for('driver'))
+    if params.fillet_method_for('driven') != params.fillet_method_for('driver'):
+        method += f"+{short(params.fillet_method_for('driven'))}"
     text = (
         f"m{_num(params.module)}"
         f"_z{params.driver.teeth}x{_num(params.driver.profile_shift)}"
@@ -75,9 +80,12 @@ def write_run_record(
         "inputs": inputs,
         "results": {
             "contact_ratio": result.analysis.contact_ratio,
-            "center_distance_mm": result.analysis.center_distance,
+            "center_distance_mm": abs(result.analysis.center_distance),
+            "internal_pair": result.analysis.is_internal,
             "gear1_undercut": result.gear1.undercut_status,
             "gear2_undercut": result.gear2.undercut_status,
+            "gear1_notes": result.gear1.notes,
+            "gear2_notes": result.gear2.notes,
         },
         "files": files,
     }
@@ -99,6 +107,7 @@ def inputs_from_parameters(params: GearPairParameters) -> Dict[str, object]:
         'hob_edge_radius_c': params.hob_edge_radius,
         'tooth_edge_radius_e': params.tooth_edge_radius,
         'root_fillet_method': params.root_fillet_method,
+        'root_fillet_method_2': params.driven_fillet_method or 'same as gear 1',
         'teeth_number_z2': params.driven.teeth,
         'offset_factor_x2': params.driven.profile_shift,
         'x_0': params.center_x,

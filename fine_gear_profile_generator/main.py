@@ -104,9 +104,13 @@ def run_headless_mode(
 
     print(f"Fillet method   : {params.root_fillet_method}")
     print(f"Contact ratio   : {analysis.contact_ratio:.4f}")
-    print(f"Center distance : {analysis.center_distance:.4f} mm")
+    internal = " (internal pair)" if analysis.is_internal else ""
+    print(f"Center distance : {abs(analysis.center_distance):.4f} mm{internal}")
     print(f"Gear 1 undercut : {result.gear1.undercut_status}")
     print(f"Gear 2 undercut : {result.gear2.undercut_status}")
+    for label, gear in (("Gear 1", result.gear1), ("Gear 2", result.gear2)):
+        for note in gear.notes:
+            print(f"Warning ({label}): {note}")
     print(f"Wrote {image_path}")
     print(f"Wrote {dxf_path}")
     print(f"Wrote {record_path}")

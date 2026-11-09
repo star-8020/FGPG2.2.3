@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple, Union
 
 import numpy as np
@@ -30,6 +30,8 @@ class StructuredToothProfile:
     """A structured representation of a single tooth profile using geometric primitives."""
 
     elements: List[Union[Arc, Spline]]
+    notes: List[str] = field(default_factory=list)
+    tip_radius: Optional[float] = None
 
 
 @dataclass
@@ -123,6 +125,7 @@ class GearPairParameters:
     segmentation: SegmentationSettings
     root_fillet_method: str = "rack_trochoid"
     shaper_cutter: Optional[ShaperCutterParameters] = None
+    driven_fillet_method: Optional[str] = None  # None = same as root_fillet_method
     center_x: float = 0.0
     center_y: float = 0.0
 
@@ -133,11 +136,23 @@ class GearPairParameters:
             raise ValueError("Module must be positive.")
         if not 0 < self.pressure_angle_deg < 90:
             raise ValueError("Pressure angle must be between 0 and 90 degrees.")
+        if self.driven_fillet_method is not None and self.driven_fillet_method not in FILLET_METHODS:
+            raise ValueError(
+                f"Unknown root fillet method '{self.driven_fillet_method}' for gear 2. "
+                f"Expected one of {', '.join(FILLET_METHODS)}."
+            )
         if self.root_fillet_method not in FILLET_METHODS:
             raise ValueError(
                 f"Unknown root fillet method '{self.root_fillet_method}'. "
                 f"Expected one of {', '.join(FILLET_METHODS)}."
             )
+
+    def fillet_method_for(self, gear_type: str) -> str:
+        """Fillet method requested for ``'driver'`` (gear 1) or ``'driven'`` (gear 2)."""
+
+        if gear_type == 'driven' and self.driven_fillet_method is not None:
+            return self.driven_fillet_method
+        return self.root_fillet_method
 
     def to_calculation_dict(self) -> Dict[str, object]:
         """Translate the dataclass into the dictionary form used by the engine."""
@@ -160,6 +175,7 @@ class GearPairParameters:
             "X_0": self.center_x,
             "Y_0": self.center_y,
             "FILLET_METHOD": self.root_fillet_method,
+            "FILLET_METHOD_2": self.driven_fillet_method,
         }
 
     @classmethod
@@ -186,6 +202,7 @@ class GearPairParameters:
             driven=GearSpec(teeth=int(params["z2"]), profile_shift=float(params["x2"])),
             segmentation=segmentation,
             root_fillet_method=str(params.get("FILLET_METHOD", "rack_trochoid")),
+            driven_fillet_method=params.get("FILLET_METHOD_2"),
             center_x=float(params.get("X_0", 0.0)),
             center_y=float(params.get("Y_0", 0.0)),
         )
@@ -196,7 +213,12 @@ class GearPairAnalysis:
     """Calculated metrics that describe a gear pair's performance."""
 
     contact_ratio: float
-    center_distance: float
+    center_distance: float  # signed: negative for an internal pair (ISO 21771)
+
+    @property
+    def is_internal(self) -> bool:
+        """True for a pinion meshing with an internal (ring) gear."""
+        return self.center_distance < 0
 
 
 @dataclass
@@ -208,6 +230,7 @@ class GearProfileGeometry:
     pitch_angle: float
     alignment_angle: float
     undercut_status: str
+    notes: List[str] = field(default_factory=list)
 
 
 @dataclass

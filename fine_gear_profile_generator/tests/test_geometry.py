@@ -109,10 +109,10 @@ class TestGeometryGeneration(unittest.TestCase):
         all_vertices_arr = np.array(all_vertices)
         self.assertTrue(np.all(np.isfinite(all_vertices_arr)))
 
-        # In a corrected undercut, flank and root are separate.
-        # We expect 6 splines: edge, flank, root (x2 for each side)
+        # In a corrected undercut, flank and root are separate splines
+        # (x2 for each side); the tip rounds are arcs.
         spline_count = sum(1 for el in profile.elements if isinstance(el, models.Spline))
-        self.assertEqual(spline_count, 6)
+        self.assertEqual(spline_count, 4)
 
     def test_no_undercut_splines_are_merged(self):
         """
@@ -126,10 +126,12 @@ class TestGeometryGeneration(unittest.TestCase):
         # Check that there was no undercut
         self.assertEqual(status, "OK")
 
-        # When merged, root and flank become one.
-        # We expect 4 splines: edge, profile (x2 for each side)
+        # When merged, root and flank become one spline per side.
         spline_count = sum(1 for el in profile.elements if isinstance(el, models.Spline))
-        self.assertEqual(spline_count, 4)
+        self.assertEqual(spline_count, 2)
+        # Tip rounds (2), tip arcs (2) and root arcs (2) are true arcs.
+        arc_count = sum(1 for el in profile.elements if isinstance(el, models.Arc))
+        self.assertEqual(arc_count, 6)
 
 if __name__ == '__main__':
     unittest.main()
