@@ -104,9 +104,15 @@ def export_gear_pair_to_image(
         x_final, y_final = transformations.translate(x_temp, y_temp, x_offset + center_dist, y_offset)
         ax.plot(x_final, y_final, '-', linewidth=1.5, color='red')
 
-    ax.set_xlim(-module_value * gear1_teeth / 1.5, center_dist + module_value * gear2_teeth / 1.5)
-    max_teeth = max(gear1_teeth, gear2_teeth)
-    ax.set_ylim(-module_value * max_teeth * 1.2, module_value * max_teeth * 1.2)
+    # Fit the view to the drawn gears with a small margin.
+    xs = np.concatenate([line.get_xdata() for line in ax.get_lines()])
+    ys = np.concatenate([line.get_ydata() for line in ax.get_lines()])
+    margin = 0.05 * max(np.ptp(xs), np.ptp(ys))
+    ax.set_xlim(xs.min() - margin, xs.max() + margin)
+    ax.set_ylim(ys.min() - margin, ys.max() + margin)
+    width = 10.0
+    fig.set_size_inches(width, max(4.0, width * (np.ptp(ys) + 2 * margin) / (np.ptp(xs) + 2 * margin) + 0.6))
+    fig.tight_layout()
 
     output_path = os.path.join(working_dir, filename)
     fig.savefig(output_path, dpi=100)

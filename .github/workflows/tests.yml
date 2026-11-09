@@ -5,16 +5,36 @@ on:
   pull_request:
 
 jobs:
-  pytest:
+  linux:
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
-        python-version: ["3.9", "3.12"]
+        python-version: ["3.12", "3.14", "3.15"]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python-version }}
       - run: pip install -r fine_gear_profile_generator/requirements.txt pytest
-      - run: python -m pytest -q
+      # xvfb provides a virtual display so the Tkinter GUI tests run too.
+      - run: xvfb-run -a python -m pytest -q -rs
       - run: python -m fine_gear_profile_generator.main --headless --fillet-method shaper_trochoid --output-dir out
+
+  windows-installer:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.15"
+      - name: Run install_windows.bat
+        shell: cmd
+        env:
+          FGPG_NONINTERACTIVE: "1"
+        run: call install_windows.bat
+      - name: Tests in the installed environment
+        shell: cmd
+        run: |
+          .venv\Scripts\python.exe -m pip install pytest
+          .venv\Scripts\python.exe -m pytest -q -rs

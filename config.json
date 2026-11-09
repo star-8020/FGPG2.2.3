@@ -1,7 +1,6 @@
 {
   "window": {
-    "title": "FGPG - Fine Gear Profile Generator",
-    "geometry": "950x700"
+    "title": "FGPG - Fine Gear Profile Generator"
   },
   "defaults": {
     "module_m": 1.0,

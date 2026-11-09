@@ -16,11 +16,25 @@ The root fillet can be generated in two ways:
 
 ## Getting started
 
-Requirements: Python 3.9+ and the packages in `fine_gear_profile_generator/requirements.txt`
-(Tkinter is needed only for the GUI).
+### Windows (easiest)
+
+1. Download the repository (green **Code** button → *Download ZIP*) and unzip it, or `git clone` it.
+2. Double-click **`install_windows.bat`** (once). It
+   - looks for Python 3.12 or newer. If Python is missing or older than 3.15, it offers to
+     install Python 3.15 with `winget`,
+   - creates a private environment in `.venv` and installs the packages,
+   - runs a quick test generation into `result/`.
+3. Double-click **`run_fgpg.bat`** to start the GUI.
+
+### Any OS (manual)
+
+Requirements: **Python 3.12 or newer** (tested on 3.12, 3.14 and 3.15; numpy/scipy require
+3.12+) and the packages in `fine_gear_profile_generator/requirements.txt`. Tkinter is needed
+only for the GUI.
 
 ```bash
-pip install -r fine_gear_profile_generator/requirements.txt
+python -m venv .venv
+.venv/bin/pip install -r fine_gear_profile_generator/requirements.txt   # Windows: .venv\Scripts\pip
 ```
 
 Run everything from the repository root (the folder that holds `config.json`).
@@ -45,8 +59,12 @@ working directory is resolved against the repository root, for both GUI and head
 
 ```bash
 pip install pytest
-python -m pytest
+python -m pytest            # GUI tests are skipped when no display is available
+xvfb-run -a python -m pytest   # Linux without a desktop: include the GUI tests
 ```
+
+CI runs the tests on Linux (Python 3.12, 3.14 and 3.15, including the real Tk GUI under
+Xvfb). It also runs `install_windows.bat` on a Windows runner.
 
 ---
 

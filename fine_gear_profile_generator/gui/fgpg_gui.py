@@ -50,6 +50,9 @@ GRAPHIC_FIELDS = [
     ("seg_root_r", "Seg, root_r", "[ea]")
 ]
 
+PREVIEW_SIZE = 600  # pixels
+
+
 class GearApp(tk.Tk):
     """Main Tkinter window hosting all application widgets."""
 
@@ -60,7 +63,9 @@ class GearApp(tk.Tk):
 
         window_config = self.config_data.get('window', {})
         self.title(window_config.get('title', "FGPG - Fine Gear Profile Generator"))
-        self.geometry(window_config.get('geometry', "950x700"))
+        if window_config.get('geometry'):
+            self.geometry(window_config['geometry'])
+        # Otherwise Tk sizes the window to fit all widgets.
 
         self.vars: Dict[str, tk.StringVar] = {}
         self.current_image_path: str = self.defaults.get('current_image_path', "Result1.png")
@@ -193,19 +198,21 @@ class GearApp(tk.Tk):
         ttk.Button(dir_frame, text="Browse...", command=self.browse_dir).grid(row=0, column=2)
         dir_frame.columnconfigure(1, weight=1)
 
-        self.image_label = ttk.Label(parent, text="Image will be displayed here.")
-        self.image_label.grid(row=1, column=0, pady=10, sticky="nsew")
-        parent.rowconfigure(1, weight=1)
-
-        self.status_var = tk.StringVar(value="Welcome to the Fine Gear Profile Generator!")
-        ttk.Label(parent, textvariable=self.status_var, wraplength=500).grid(row=2, column=0, sticky="ew", pady=5)
-
+        # Buttons sit directly under the working directory so they stay visible
+        # on small screens.
         btn_frame = ttk.Frame(parent)
-        btn_frame.grid(row=3, column=0, sticky="ew")
+        btn_frame.grid(row=1, column=0, sticky="ew", pady=(0, 5))
         ttk.Button(btn_frame, text="Load", command=self.load_params_from_file).pack(side="left", padx=5)
         ttk.Button(btn_frame, text="Run", command=self.run_calculation).pack(side="left", padx=5)
         ttk.Button(btn_frame, text="Save", command=self.save_params_to_file).pack(side="left", padx=5)
         ttk.Button(btn_frame, text="Exit", command=self.quit).pack(side="left", padx=5)
+
+        self.status_var = tk.StringVar(value="Welcome to the Fine Gear Profile Generator!")
+        ttk.Label(parent, textvariable=self.status_var, wraplength=600).grid(row=2, column=0, sticky="ew", pady=5)
+
+        self.image_label = ttk.Label(parent, text="Image will be displayed here.")
+        self.image_label.grid(row=3, column=0, pady=5, sticky="nsew")
+        parent.rowconfigure(3, weight=1)
 
     def load_logo_image(self) -> None:
         """Load the application logo if Pillow is available."""
@@ -217,7 +224,7 @@ class GearApp(tk.Tk):
         if os.path.exists(logo_path):
             try:
                 img = Image.open(logo_path)
-                img.thumbnail((500, 500))
+                img.thumbnail((PREVIEW_SIZE, PREVIEW_SIZE))
                 self.logo_image = ImageTk.PhotoImage(img)
                 self.image_label.config(image=self.logo_image)
             except Exception as exc:  # pragma: no cover - UI feedback
@@ -335,7 +342,7 @@ class GearApp(tk.Tk):
         try:
             if os.path.exists(img_path):
                 img = Image.open(img_path)
-                img.thumbnail((500, 500))
+                img.thumbnail((PREVIEW_SIZE, PREVIEW_SIZE))
                 self.result_image = ImageTk.PhotoImage(img)
                 self.image_label.config(image=self.result_image)
             else:
