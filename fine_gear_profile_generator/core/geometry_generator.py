@@ -8,7 +8,7 @@ import numpy as np
 
 from . import gear_math, transformations
 from . import shaper_fillet as shaper_fillet_generator
-from .models import Arc, Spline, StructuredToothProfile, GearPairParameters
+from .models import Arc, GearPairParameters, ShaperCutterParameters, Spline, StructuredToothProfile
 
 
 def involute_curve(
@@ -22,9 +22,7 @@ def involute_curve(
 ) -> List[Tuple[float, float]]:
     """Generate the involute flank curve."""
     theta_values = np.linspace(theta_start, theta_end, segment_count)
-    radius = 0.5 * module * teeth * np.cos(base_angle) * np.sqrt(1 + theta_values**2)
-    x_coords = radius * np.cos(start_angle + theta_values - np.arctan(theta_values))
-    y_coords = radius * np.sin(start_angle + theta_values - np.arctan(theta_values))
+    x_coords, y_coords = gear_math.get_involute_coords(theta_values, module, teeth, base_angle, start_angle)
     return list(zip(x_coords, y_coords))
 
 
@@ -60,22 +58,8 @@ def rack_trochoid_root_curve(
 ) -> List[Tuple[float, float]]:
     """Generate the trochoidal root fillet curve based on a rack cutter."""
     theta_values = np.linspace(0, theta_end, segment_count)
-    denominator = module * (dedendum_factor - profile_shift - hob_edge_radius)
-    if hob_edge_radius != 0 and denominator == 0:
-        theta_s = (np.pi / 2) * np.ones(len(theta_values))
-    elif denominator != 0:
-        theta_s = np.arctan((module * teeth * theta_values / 2) / denominator)
-    else:
-        theta_s = np.zeros(len(theta_values))
-    x_coords = module * (
-        (teeth / 2 + profile_shift - dedendum_factor + hob_edge_radius) * np.cos(theta_values + alpha_transition)
-        + (teeth / 2) * theta_values * np.sin(theta_values + alpha_transition)
-        - hob_edge_radius * np.cos(theta_s + theta_values + alpha_transition)
-    )
-    y_coords = module * (
-        (teeth / 2 + profile_shift - dedendum_factor + hob_edge_radius) * np.sin(theta_values + alpha_transition)
-        - (teeth / 2) * theta_values * np.cos(theta_values + alpha_transition)
-        - hob_edge_radius * np.sin(theta_s + theta_values + alpha_transition)
+    x_coords, y_coords = gear_math.get_trochoid_coords(
+        theta_values, module, teeth, profile_shift, dedendum_factor, hob_edge_radius, alpha_transition
     )
     return list(zip(x_coords, y_coords))
 
@@ -120,65 +104,72 @@ def generate_tooth_profile(
         addendum_calc, dedendum_calc, hob_edge_calc, tooth_edge_calc,
     )
 
-    alpha_transition = (
-        (2 * (hob_edge_calc * (1 - np.sin(base_angle)) - dedendum_calc) * np.sin(base_angle) + backlash_calc)
-        / (teeth_calc * np.cos(base_angle))
-        - 2 * hob_edge_calc * np.cos(base_angle) / teeth_calc + np.pi / (2 * teeth_calc)
-    )
-    theta_end = (
-        2 * hob_edge_calc * np.cos(base_angle) / teeth_calc
-        - 2 * (dedendum_calc - shift_calc - hob_edge_calc * (1 - np.sin(base_angle)))
-        * np.cos(base_angle) / (teeth_calc * np.sin(base_angle))
-    )
+    root_radius = params.module * (teeth_calc / 2 - dedendum_calc + shift_calc)
 
-    undercut_status = "OK"
-    if involute_theta_start < 0:
-        undercut_status = "Corrected"
-        initial_guess = [0.01, theta_end]
-        involute_theta_start, theta_end = gear_math.solve_undercut_angles(
-            params.module, teeth_calc, base_angle, shift_calc, dedendum_calc, hob_edge_calc,
-            involute_start_angle, alpha_transition, initial_guess,
+    if params.root_fillet_method == 'shaper_trochoid':
+        if gear_spec.teeth < 0:
+            raise ValueError(
+                "The 'shaper_trochoid' fillet method currently supports external gears only."
+            )
+        cutter = params.shaper_cutter or ShaperCutterParameters()
+        tip_factor = hob_edge_calc if cutter.tip_radius_factor is None else cutter.tip_radius_factor
+        fillet = shaper_fillet_generator.generate_shaper_fillet(
+            module=params.module,
+            teeth=teeth_calc,
+            pressure_angle_rad=base_angle,
+            flank_base_angle=involute_start_angle,
+            root_radius=root_radius,
+            cutter_teeth=cutter.teeth,
+            tip_radius=tip_factor * params.module,
+            protuberance=cutter.protuberance_factor * params.module,
+            cutter_profile_shift=cutter.profile_shift,
+            samples=params.segmentation.root_round,
+        )
+        root1_vertices = [(float(x), float(y)) for x, y in fillet.points]
+        root_end_angle = fillet.root_angle
+        base_radius = 0.5 * params.module * teeth_calc * np.cos(base_angle)
+        involute_theta_start = float(np.sqrt(max((fillet.soi_radius / base_radius) ** 2 - 1.0, 0.0)))
+        undercut_status = "OK" if fillet.tangent_to_involute else "Corrected"
+    else:  # 'rack_trochoid'
+        alpha_transition = (
+            (2 * (hob_edge_calc * (1 - np.sin(base_angle)) - dedendum_calc) * np.sin(base_angle) + backlash_calc)
+            / (teeth_calc * np.cos(base_angle))
+            - 2 * hob_edge_calc * np.cos(base_angle) / teeth_calc + np.pi / (2 * teeth_calc)
+        )
+        theta_end = (
+            2 * hob_edge_calc * np.cos(base_angle) / teeth_calc
+            - 2 * (dedendum_calc - shift_calc - hob_edge_calc * (1 - np.sin(base_angle)))
+            * np.cos(base_angle) / (teeth_calc * np.sin(base_angle))
+        )
+
+        undercut_status = "OK"
+        if involute_theta_start < 0:
+            undercut_status = "Corrected"
+            initial_guess = [0.01, theta_end]
+            involute_theta_start, theta_end = gear_math.solve_undercut_angles(
+                params.module, teeth_calc, base_angle, shift_calc, dedendum_calc, hob_edge_calc,
+                involute_start_angle, alpha_transition, initial_guess,
+            )
+
+        root1_vertices = rack_trochoid_root_curve(
+            params.module, teeth_calc, shift_calc, dedendum_calc, hob_edge_calc,
+            theta_end, alpha_transition, params.segmentation.root_round,
+        )
+        root_end_angle = alpha_transition
+
+    if involute_theta_start >= involute_theta_end:
+        raise ValueError(
+            "The root fillet reaches the tooth tip: no involute flank is left. "
+            "Check the profile shift, dedendum and tip radius values."
         )
 
     flank1_vertices = involute_curve(
         params.module, teeth_calc, params.segmentation.involute,
         involute_theta_start, involute_theta_end, base_angle, involute_start_angle,
     )
-
     if params.root_fillet_method == 'shaper_trochoid':
-        if not params.shaper_cutter:
-            raise ValueError("Shaper cutter parameters must be provided for 'shaper_trochoid' method.")
-
-        # Prepare parameters for the shaper fillet algorithm
-        # Assuming spur gear (psi = 0)
-        phi_t = np.arctan(np.tan(np.radians(params.pressure_angle_deg)) / 1.0)
-        s_t = params.module * (np.pi/2 + 2 * shift_calc * np.tan(phi_t))
-        s_t -= backlash_calc / 2
-        sn_inch = s_t / 25.4
-        assert sn_inch < 2, "Expected normal tooth thickness in inches; check unit conversions."
-
-        gear_dict = {
-            'Pnd': 25.4 / params.module, # Conversion from module (mm) to Pnd (in^-1)
-            'n': teeth_calc,
-            'φn': params.pressure_angle_deg,
-            'ψ': 0, # Assuming spur gear
-            'sn': sn_inch, # Normal thickness for spur gear (inches)
-        }
-        tool_dict = params.shaper_cutter.__dict__
-        opts_dict = {'tol': 1e-10, 'max_iter': 30, 'ds': 0.001}
-
-        # NOTE: The current implementation of compute_shaper_root_fillet is a stub.
-        # The returned points will need transformation to be correctly placed.
-        # This section serves as an integration hook for the new algorithm.
-        fillet_points, _ = shaper_fillet_generator.compute_shaper_root_fillet(gear_dict, tool_dict, opts_dict)
-        # Placeholder for transformation and selecting one side of the fillet
-        root1_vertices = list(fillet_points[:len(fillet_points)//2])
-
-    else: # 'rack_trochoid'
-        root1_vertices = rack_trochoid_root_curve(
-            params.module, teeth_calc, shift_calc, dedendum_calc, hob_edge_calc,
-            theta_end, alpha_transition, params.segmentation.root_round,
-        )
+        # Make the junction exact (the fillet end lies on the involute to ~1e-12).
+        flank1_vertices[0] = root1_vertices[-1]
 
     edge_x = params.module * ((teeth_calc / 2) + shift_calc + addendum_calc) * np.cos(edge_angle)
     edge_y = params.module * ((teeth_calc / 2) + shift_calc + addendum_calc) * np.sin(edge_angle)
@@ -196,7 +187,7 @@ def generate_tooth_profile(
     )
     outer2_arc = transformations.reflect_y_arc(outer1_arc)
 
-    root1_arc = root_arc(params.module, teeth_calc, shift_calc, dedendum_calc, alpha_transition)
+    root1_arc = root_arc(params.module, teeth_calc, shift_calc, dedendum_calc, root_end_angle)
     root2_arc = transformations.reflect_y_arc(root1_arc)
 
     if undercut_status == "OK":

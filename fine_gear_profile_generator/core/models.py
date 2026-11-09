@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, List, Tuple, Union
+from typing import Dict, List, Optional, Tuple, Union
 
 import numpy as np
 
@@ -72,17 +72,39 @@ class SegmentationSettings:
                 raise ValueError(f"Segmentation value '{name}' must be positive.")
 
 
+FILLET_METHODS = ("rack_trochoid", "shaper_trochoid")
+
+
 @dataclass
 class ShaperCutterParameters:
-    """Parameters for the shaper cutter tool, based on Lian (2006)."""
-    Pnd0: float
-    n0: int
-    phi_n0_deg: float
-    psi0_deg: float
-    sn0: float
-    da0: float
-    rho0: float
-    delta0: float
+    """Pinion-type shaper cutter used by the ``shaper_trochoid`` fillet method.
+
+    The cutter shares the module and pressure angle of the work gear.  Its
+    outside diameter is derived so that it cuts the gear's root circle
+    ``m * (z/2 + x - d)``; lengths are expressed as factors of the module.
+
+    Attributes:
+        teeth: Number of cutter teeth ``n0`` (>= 5).
+        tip_radius_factor: Tip-round radius ``rho0 / m``.  ``None`` uses the
+            gear's hob edge radius factor ``c`` so that the result is directly
+            comparable with the rack method.
+        protuberance_factor: Protuberance ``delta0 / m`` (0 for a plain cutter).
+        profile_shift: Profile shift coefficient ``x0`` of the cutter.
+    """
+
+    teeth: int = 50
+    tip_radius_factor: Optional[float] = None
+    protuberance_factor: float = 0.0
+    profile_shift: float = 0.0
+
+    def __post_init__(self) -> None:
+        if int(self.teeth) != self.teeth or self.teeth < 5:
+            raise ValueError("Shaper cutter teeth must be an integer >= 5.")
+        self.teeth = int(self.teeth)
+        if self.tip_radius_factor is not None and self.tip_radius_factor < 0:
+            raise ValueError("Shaper cutter tip radius factor must be non-negative.")
+        if self.protuberance_factor < 0:
+            raise ValueError("Shaper cutter protuberance factor must be non-negative.")
 
 
 @dataclass
@@ -99,8 +121,8 @@ class GearPairParameters:
     driver: GearSpec
     driven: GearSpec
     segmentation: SegmentationSettings
-    root_fillet_method: str
-    shaper_cutter: ShaperCutterParameters | None = None
+    root_fillet_method: str = "rack_trochoid"
+    shaper_cutter: Optional[ShaperCutterParameters] = None
     center_x: float = 0.0
     center_y: float = 0.0
 
@@ -111,8 +133,13 @@ class GearPairParameters:
             raise ValueError("Module must be positive.")
         if not 0 < self.pressure_angle_deg < 90:
             raise ValueError("Pressure angle must be between 0 and 90 degrees.")
+        if self.root_fillet_method not in FILLET_METHODS:
+            raise ValueError(
+                f"Unknown root fillet method '{self.root_fillet_method}'. "
+                f"Expected one of {', '.join(FILLET_METHODS)}."
+            )
 
-    def to_calculation_dict(self) -> Dict[str, float]:
+    def to_calculation_dict(self) -> Dict[str, object]:
         """Translate the dataclass into the dictionary form used by the engine."""
 
         return {
@@ -132,11 +159,15 @@ class GearPairParameters:
             "x2": self.driven.profile_shift,
             "X_0": self.center_x,
             "Y_0": self.center_y,
+            "FILLET_METHOD": self.root_fillet_method,
         }
 
     @classmethod
-    def from_dict(cls, params: Dict[str, float]) -> "GearPairParameters":
-        """Build an instance from the legacy dictionary representation."""
+    def from_dict(cls, params: Dict[str, object]) -> "GearPairParameters":
+        """Build an instance from the legacy dictionary representation.
+
+        ``FILLET_METHOD`` is optional and defaults to ``rack_trochoid``.
+        """
 
         segmentation = SegmentationSettings(
             involute=int(params["SEG_INVOLUTE"]),
@@ -154,6 +185,7 @@ class GearPairParameters:
             driver=GearSpec(teeth=int(params["Z"]), profile_shift=float(params["X"])),
             driven=GearSpec(teeth=int(params["z2"]), profile_shift=float(params["x2"])),
             segmentation=segmentation,
+            root_fillet_method=str(params.get("FILLET_METHOD", "rack_trochoid")),
             center_x=float(params.get("X_0", 0.0)),
             center_y=float(params.get("Y_0", 0.0)),
         )

@@ -1,6 +1,6 @@
 import unittest
 import os
-import shutil
+import tempfile
 
 from fine_gear_profile_generator.core import geometry_generator, models
 from fine_gear_profile_generator.io import dxf_exporter
@@ -9,8 +9,8 @@ class TestDxfOutput(unittest.TestCase):
 
     def setUp(self):
         """Set up parameters and a temporary directory for test files."""
-        self.temp_dir = "temp_test_output"
-        os.makedirs(self.temp_dir, exist_ok=True)
+        self._tmp = tempfile.TemporaryDirectory()
+        self.temp_dir = self._tmp.name
 
         segmentation = models.SegmentationSettings(involute=15, edge=15, root_round=15)
         driver_spec = models.GearSpec(teeth=18, profile_shift=0.2)
@@ -32,8 +32,7 @@ class TestDxfOutput(unittest.TestCase):
 
     def tearDown(self):
         """Remove the temporary directory and its contents after the test."""
-        if os.path.exists(self.temp_dir):
-            shutil.rmtree(self.temp_dir)
+        self._tmp.cleanup()
 
     def test_dxf_file_is_created(self):
         """
@@ -85,6 +84,15 @@ class TestDxfOutput(unittest.TestCase):
 
         # Check if the file is not empty
         self.assertTrue(os.path.getsize(expected_filepath) > 0, "DXF file is empty.")
+
+    def test_write_failure_raises(self):
+        """Export errors must propagate instead of being printed and ignored."""
+        g1, t1, p1, a1, s1 = geometry_generator.generate_tooth_profile(self.gear_pair_params, 'driver')
+        geom = models.GearProfileGeometry(g1, int(t1), p1, a1, s1)
+        missing_dir = os.path.join(self.temp_dir, 'does', 'not', 'exist')
+        with self.assertRaises(OSError):
+            dxf_exporter.export_gear_pair_to_dxf(missing_dir, geom, geom, 27.0, 0.0, 0.0)
+
 
 if __name__ == '__main__':
     unittest.main()

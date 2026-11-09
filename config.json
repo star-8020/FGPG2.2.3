@@ -1,6 +1,6 @@
 {
   "window": {
-    "title": "FGPG - Fine Gear Profile Generator (Refactored)",
+    "title": "FGPG - Fine Gear Profile Generator",
     "geometry": "950x700"
   },
   "defaults": {
@@ -21,19 +21,13 @@
     "seg_involute": 15,
     "seg_edge_r": 15,
     "seg_root_r": 15,
-    "seg_outer": 5,
-    "seg_root": 5,
     "working_directory": "./result/",
     "current_image_path": "Result1.png"
   },
   "shaper_cutter_defaults": {
-    "Pnd0": 12,
-    "n0": 1000,
-    "phi_n0_deg": 20.0,
-    "psi0_deg": 22.1,
-    "sn0": 0.13,
-    "da0": 9.23,
-    "rho0": 0.01,
-    "delta0": 0.0025
+    "n0": 50,
+    "tip_radius_factor": null,
+    "protuberance_factor": 0.0,
+    "profile_shift_x0": 0.0
   }
 }

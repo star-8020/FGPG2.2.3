@@ -1,100 +1,157 @@
-# FGPG 2.2.1
-# Fine Gear Profile Generator (FGPG)
+# Fine Gear Profile Generator (FGPG) 2.2.3
 
-### 🧭 Overview
-This version of FGPG introduces a major new feature: the **Shaper-Cutter Root Fillet Algorithm**. Based on the analytical work of George Lian (2006), this advanced modeling capability replaces the traditional rack-based trochoid approximation with a realistic gear–gear conjugate model. This allows for the generation of gear profiles with higher precision and improved structural reliability, especially at the tooth root.
+FGPG generates precise 2D tooth profiles of spur gear pairs (external, and internal with the
+rack method) and exports them as DXF (CAD) and PNG (preview). Each tooth is assembled from
+exact primitives: involute flanks and root fillets as fit-point SPLINEs, and the tip and root
+circles as ARCs.
 
-This feature is implemented as an optional setting, allowing users to choose between the classic rack generation method and the new shaper-based algorithm.
+The root fillet can be generated in two ways:
 
----
-
-### ⚙️ How to Use the Shaper-Cutter Fillet Option
-
-To enable the shaper-cutter algorithm, modify the `config.json` file in the project's root directory.
-
-1.  **Set the fillet method:**
-    In the `defaults` section, set the `root_fillet_method` property to `"shaper_trochoid"`.
-
-    ```json
-    {
-      "defaults": {
-        "root_fillet_method": "shaper_trochoid",
-        ...
-      }
-    }
-    ```
-    The available options are:
-    - `"rack_trochoid"`: The classic method using a rack cutter approximation (default).
-    - `"shaper_trochoid"`: The new, more accurate method using a shaper cutter model.
-
-2.  **Configure the shaper cutter tool (optional):**
-    You can customize the parameters of the virtual shaper cutter tool by editing the `shaper_cutter_defaults` section in `config.json`.
-
-    ```json
-    {
-      "shaper_cutter_defaults": {
-        "Pnd0": 12,
-        "n0": 1000,
-        "phi_n0_deg": 20.0,
-        "psi0_deg": 22.1,
-        "sn0": 0.13,
-        "da0": 9.23,
-        "rho0": 0.01,
-        "delta0": 0.0025
-      }
-    }
-    ```
+| Method | Model | When to use |
+|---|---|---|
+| `rack_trochoid` (default) | Fillet cut by a rack / hob with tip radius `c·m` | Hobbed gears |
+| `shaper_trochoid` | Fillet cut by a pinion-type shaper cutter with `n0` teeth (gear–gear generation, Lian 2006) | Shaped gears, internal-gear cutters, small cutters |
 
 ---
 
-### 🧩 Core Implementation
-The new algorithm is implemented in the following core modules:
+## Getting started
+
+Requirements: Python 3.9+ and the packages in `fine_gear_profile_generator/requirements.txt`
+(Tkinter is needed only for the GUI).
+
+```bash
+pip install -r fine_gear_profile_generator/requirements.txt
 ```
-/fine_gear_profile_generator/core/
-  ├── shaper_fillet.py  # Main shaper-cutter trochoid algorithm
-  ├── newton.py         # Multi-variable Newton-Raphson solver
-  ├── involute.py       # Involute curve utilities
-  ├── geometry_generator.py # Integrates the new method
-  └── ...
+
+Run everything from the repository root (the folder that holds `config.json`).
+
+**GUI**
+
+```bash
+python -m fine_gear_profile_generator.main
+```
+
+**Headless** (no display or Tk needed)
+
+```bash
+python -m fine_gear_profile_generator.main --headless
+python -m fine_gear_profile_generator.main --headless --fillet-method shaper_trochoid --cutter-teeth 30 --output-dir out
+```
+
+The program writes `Result1.png` and `Result_Gear_Pair.dxf` (DXF units: mm). A relative
+working directory is resolved against the repository root, for both GUI and headless runs.
+
+**Tests**
+
+```bash
+pip install pytest
+python -m pytest
 ```
 
 ---
 
-### 🧮 Algorithm Workflow
-1.  **Configuration:** The application reads the `root_fillet_method` from `config.json`.
-2.  **Parameter Calculation:** It computes the base geometry for the gear and, if selected, the shaper tool.
-3.  **Fillet Generation:**
-    - If `shaper_trochoid` is selected, `shaper_fillet.py` solves the non-linear system for the cutter tip and traces its path to generate the root trochoid.
-    - Otherwise, the classic rack-based trochoid is generated.
-4.  **SOI Detection:** The Start of Involute (SOI) is calculated by finding the intersection of the fillet and the involute profile.
-5.  **Profile Assembly:** The final gear profile is assembled and exported.
+## Configuration (`config.json`)
+
+`defaults` holds the gear parameters (module, teeth, pressure angle, profile shift, backlash,
+addendum/dedendum factors, hob edge radius `c`, tip edge radius `e`, mating gear, segment
+counts, working directory) and `root_fillet_method`.
+
+`shaper_cutter_defaults` is used when `root_fillet_method` is `shaper_trochoid`:
+
+```json
+"shaper_cutter_defaults": {
+  "n0": 50,
+  "tip_radius_factor": null,
+  "protuberance_factor": 0.0,
+  "profile_shift_x0": 0.0
+}
+```
+
+| Key | Meaning |
+|---|---|
+| `n0` | Number of cutter teeth (>= 5). |
+| `tip_radius_factor` | Cutter tip radius `rho0 / m`. `null` uses the hob edge radius factor `c`, so both methods use the same tool tip radius. |
+| `protuberance_factor` | Protuberance `delta0 / m` (0 = plain cutter). |
+| `profile_shift_x0` | Profile shift of the cutter. |
+
+The cutter has the module and pressure angle of the gear. Its outside diameter is derived
+so that it cuts the gear's root circle `m·(z/2 + x − d)`. The pre-2.2.3 inch-based keys
+(`Pnd0`, `da0`, `sn0`, …) are no longer used.
 
 ---
 
-### 📈 Validation
-The algorithm's accuracy is validated by observing its convergence towards the traditional hobbed trochoid as the shaper cutter's number of teeth approaches infinity.
+## Shaper-cutter fillet: how it works
 
-| Cutter Teeth | Max Fillet Deviation (vs. Rack) | SOI Difference (vs. Rack) |
-|--------------|---------------------------------|---------------------------|
-| 100          | 0.001901 in                     | 0.0102 in                 |
-| 1000         | 0.000111 in                     | 0.0011 in                 |
-| 10000        | 0.000011 in                     | 0.0001 in                 |
+Implemented in `fine_gear_profile_generator/core/shaper_fillet.py`. Everything is in mm, in the
+transverse plane.
 
-These results confirm that the shaper-based model is a correct generalization of the rack-based limit.
+1. **Generating mesh.** Gear and cutter mesh without backlash. The operating pressure
+   angle follows in closed form from the gear space width (including profile shift and
+   backlash) and the cutter tooth thickness:
+   `inv αw = (n0·ψb0 − z·ηb) / (z + n0)`, `C = (rb + rb0) / cos αw`.
+2. **Tool tip.** The tip round (radius `rho0`) touches the cutter outside circle and its
+   involute flank. Its centre lies on the flank involute offset by `rho0 − delta0`, which is
+   the same involute rotated by `(rho0 − delta0)/rb0`.
+3. **Fillet.** While the gears roll, the tip-round centre traces a trochoid in the gear
+   frame. The fillet is the envelope of the tip round, from the root circle up to the point
+   where the contact reaches the flank tangency point. There it joins the involute
+   tangentially. This point is the start of involute (SOI).
+4. **Undercut and protuberance.** If the fillet cuts into the involute, the profile follows
+   the fillet up to its intersection with the involute and is reported as
+   "Undercut (profile corrected)". This is the same treatment as the rack method.
+
+Only external spur gears are supported by this method. Internal gears with
+`shaper_trochoid` raise a clear error.
+
+### Validation (measured by `tests/test_shaper_fillet.py`)
+
+As `n0 → ∞` the shaper cutter becomes a rack, so the fillet must converge to the rack
+fillet. Example: z = 18, x = 0.2, m = 1 mm, α = 20°, c = 0.2, b = 0.05. The rack SOI
+diameter is 16.9327 mm.
+
+| Cutter teeth `n0` | Max fillet deviation from rack fillet [mm] | SOI diameter [mm] | SOI − rack SOI [µm] |
+|---|---|---|---|
+| 20 | 8.80e-02 | 17.0287 | +95.9 |
+| 50 | 4.04e-02 | 16.9735 | +40.8 |
+| 100 | 2.14e-02 | 16.9530 | +20.3 |
+| 1 000 | 2.26e-03 | 16.9347 | +1.9 |
+| 10 000 | 2.28e-04 | 16.9329 | +0.2 |
+
+The deviation falls as `1/n0`. The tests also check four more properties:
+- The fillet starts exactly on the root circle and ends on the involute (to 1e-9 mm).
+- The SOI rises as the cutter gets smaller.
+- For undercut gears (z = 10) the SOI converges to the rack method's undercut intersection.
+- The whole tooth outline is continuous (all element end points meet within 1e-9 mm).
 
 ---
 
-### 💡 Benefits
-- **Realistic Geometry:** Simulates true gear–gear contact instead of a rack approximation.
-- **Improved Strength:** Produces a smoother root curvature, leading to better stress distribution.
-- **Advanced Control:** Allows direct control over protuberance and tool-tip radius.
-- **FEA-Ready:** Generates high-fidelity profiles suitable for CAE/FEA analysis.
+## Project structure
 
----
+```
+fine_gear_profile_generator/
+  main.py                 entry point (GUI / --headless)
+  core/
+    models.py             dataclasses: GearPairParameters, ShaperCutterParameters, results
+    gear_math.py          involute function, contact ratio, tooth angles, rack curves
+    geometry_generator.py assembles one tooth (fillet, involute, tip round, arcs)
+    shaper_fillet.py      shaper-cutter fillet (see above)
+    transformations.py    mirror / rotate / translate helpers
+    gear_core.py          orchestrates a gear pair
+  io/                     DXF (ezdxf) and PNG (matplotlib) export
+  gui/fgpg_gui.py         Tkinter GUI
+  utils/config_manager.py config.json and Inputs.dat handling
+  tests/                  pytest / unittest suite
+docs/                     design notes
+```
 
-### 📚 Reference
-Lian, G. (2006). *Determining the Shaper Cut Helical Gear Fillet Profile.* Gear Technology, Sep/Oct 2006.
+## Known limitations
 
----
+- Spur gears only (no helix angle).
+- The contact ratio of internal gear pairs uses the external-gear formula.
+- Protuberance is modelled as a tip round shifted towards the flank. The finite length of a
+  real protuberance flank is not modelled.
 
-**FGPG — bridging analytical design and manufacturing precision.**
+## Reference
+
+Lian, G. (2006). *Determining the Shaper Cut Helical Gear Fillet Profile.* Gear Technology,
+Sep/Oct 2006.

@@ -1,5 +1,5 @@
-ezdxf
-numpy
-matplotlib
-Pillow
-scipy
+numpy>=1.21
+scipy>=1.7
+matplotlib>=3.5
+ezdxf>=1.0
+Pillow>=9.0

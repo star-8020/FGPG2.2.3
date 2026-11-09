@@ -1,0 +1,20 @@
+name: tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.9", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: pip install -r fine_gear_profile_generator/requirements.txt pytest
+      - run: python -m pytest -q
+      - run: python -m fine_gear_profile_generator.main --headless --fillet-method shaper_trochoid --output-dir out

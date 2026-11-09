@@ -23,6 +23,17 @@ def _resolve_parameters(
     return GearPairParameters.from_dict(params)
 
 
+def _describe_undercut(geometry_status: str) -> str:
+    """Translate the geometry generator status into a user-facing message.
+
+    The geometry generator detects undercut exactly (the fillet intersects the
+    involute instead of joining it tangentially), so its result is used rather
+    than the approximate ``x_min`` rule of :func:`gear_math.check_undercut`.
+    """
+
+    return "OK" if geometry_status == "OK" else "Undercut (profile corrected)"
+
+
 def generate_gear_pair(
     params: Union[GearPairParameters, Dict[str, float]],
 ) -> GearPairResult:
@@ -39,13 +50,6 @@ def generate_gear_pair(
         calc_params['x2'],
         calc_params['ALPHA'],
         calc_params['A']
-    )
-
-    undercut_status1 = gear_math.check_undercut(
-        calc_params['Z'], calc_params['ALPHA'], calc_params['X'], calc_params['A']
-    )
-    undercut_status2 = gear_math.check_undercut(
-        calc_params['z2'], calc_params['ALPHA'], calc_params['x2'], calc_params['A']
     )
 
     # Pass the full parameter object to the geometry generator
@@ -67,13 +71,13 @@ def generate_gear_pair(
             teeth=int(gear1_profile_data[1]),
             pitch_angle=float(gear1_profile_data[2]),
             alignment_angle=float(gear1_profile_data[3]),
-            undercut_status=undercut_status1,
+            undercut_status=_describe_undercut(gear1_profile_data[4]),
         ),
         gear2=GearProfileGeometry(
             profile=gear2_profile_data[0],
             teeth=int(gear2_profile_data[1]),
             pitch_angle=float(gear2_profile_data[2]),
             alignment_angle=float(gear2_profile_data[3]),
-            undercut_status=undercut_status2,
+            undercut_status=_describe_undercut(gear2_profile_data[4]),
         ),
     )
