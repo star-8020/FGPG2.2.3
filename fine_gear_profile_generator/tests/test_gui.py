@@ -96,6 +96,29 @@ class TestGearAppGui(unittest.TestCase):
             self.app.load_params_from_file()
         self.assertEqual(self.app.vars['module_m'].get(), '2')
 
+    def test_internal_pair_and_warnings_are_shown(self):
+        self.app.vars['teeth_number_z'].set('10')
+        self.app.vars['offset_factor_x'].set('0.8')     # pointed pinion tip
+        self.app.vars['teeth_number_z2'].set('-60')     # internal ring gear
+        self.app.vars['root_fillet_method'].set('shaper_trochoid')
+        self.app.run_calculation()
+        self.assertEqual(self.errors, [])
+        self.assertTrue(self.app.vars['center_distance'].get().endswith('mm (internal)'))
+        warning = self.app.warning_var.get()
+        self.assertIn('Gear 1: Tooth tip is pointed', warning)
+        self.assertIn('Gear 2: Internal gear', warning)
+
+    def test_gear2_fillet_method(self):
+        self.app.vars['root_fillet_method_2'].set('shaper_trochoid')
+        self.app._toggle_shaper_widgets()
+        self.assertTrue(self.app.shaper_frame.grid_info())  # cutter inputs needed for gear 2
+        params = self.app._params_from_ui()
+        self.assertEqual(params.root_fillet_method, 'rack_trochoid')
+        self.assertEqual(params.driven_fillet_method, 'shaper_trochoid')
+        self.app.run_calculation()
+        self.assertEqual(self.app.warning_var.get(), '')
+        self.assertTrue(any('_rack+shaper-n' in f for f in os.listdir(self._tmp.name)))
+
 
 if __name__ == '__main__':
     unittest.main()

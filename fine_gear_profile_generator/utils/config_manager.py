@@ -33,6 +33,7 @@ FALLBACK_DEFAULTS = {
     'seg_edge_r': 15,
     'seg_root_r': 15,
     'root_fillet_method': 'rack_trochoid',
+    'root_fillet_method_2': None,
     'working_directory': './result/',
 }
 
@@ -134,9 +135,12 @@ def get_default_gear_pair_parameters(config_data: Dict[str, object] | None = Non
     driver, driven = _build_gear_specs(defaults)
 
     root_fillet_method = str(defaults.get('root_fillet_method', 'rack_trochoid'))
+    driven_method = defaults.get('root_fillet_method_2')
+    if driven_method in (None, '', 'same', 'same as gear 1'):
+        driven_method = None
 
     shaper_cutter_params = None
-    if root_fillet_method == 'shaper_trochoid':
+    if 'shaper_trochoid' in (root_fillet_method, driven_method):
         shaper_cutter_params = build_shaper_cutter_parameters(get_shaper_defaults(config))
 
     return GearPairParameters(
@@ -152,6 +156,7 @@ def get_default_gear_pair_parameters(config_data: Dict[str, object] | None = Non
         segmentation=segmentation,
         root_fillet_method=root_fillet_method,
         shaper_cutter=shaper_cutter_params,
+        driven_fillet_method=driven_method,
         center_x=float(defaults.get('x_0', FALLBACK_DEFAULTS['x_0'])),
         center_y=float(defaults.get('y_0', FALLBACK_DEFAULTS['y_0'])),
     )

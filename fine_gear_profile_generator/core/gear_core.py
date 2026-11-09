@@ -39,45 +39,39 @@ def generate_gear_pair(
 ) -> GearPairResult:
     """Compute all derived geometry and analysis data for the supplied gear pair."""
 
-    normalized_params = _resolve_parameters(params)
-    calc_params = normalized_params.to_calculation_dict()
+    p = _resolve_parameters(params)
+
+    profiles = {
+        gear_type: geometry_generator.generate_tooth_profile(params=p, gear_type=gear_type)
+        for gear_type in ('driver', 'driven')
+    }
+
+    def actual_tip(gear_type: str, teeth: int):
+        # External gears: use the tip radius actually drawn (it may have been
+        # topped because the tooth was pointed).  Internal gears: nominal.
+        return profiles[gear_type][0].tip_radius if teeth > 0 else None
 
     contact_ratio, center_dist = gear_math.calculate_contact_ratio(
-        calc_params['M'],
-        calc_params['Z'],
-        calc_params['z2'],
-        calc_params['X'],
-        calc_params['x2'],
-        calc_params['ALPHA'],
-        calc_params['A']
+        p.module, p.driver.teeth, p.driven.teeth,
+        p.driver.profile_shift, p.driven.profile_shift,
+        p.pressure_angle_deg, p.addendum_factor,
+        tip_radius1=actual_tip('driver', p.driver.teeth),
+        tip_radius2=actual_tip('driven', p.driven.teeth),
     )
 
-    # Pass the full parameter object to the geometry generator
-    gear1_profile_data = geometry_generator.generate_tooth_profile(
-        params=normalized_params, gear_type='driver'
-    )
-
-    gear2_profile_data = geometry_generator.generate_tooth_profile(
-        params=normalized_params, gear_type='driven'
-    )
+    def geometry(gear_type: str) -> GearProfileGeometry:
+        profile, teeth, pitch, align, status = profiles[gear_type]
+        return GearProfileGeometry(
+            profile=profile,
+            teeth=int(teeth),
+            pitch_angle=float(pitch),
+            alignment_angle=float(align),
+            undercut_status=_describe_undercut(status),
+            notes=list(profile.notes),
+        )
 
     return GearPairResult(
-        analysis=GearPairAnalysis(
-            contact_ratio=contact_ratio,
-            center_distance=center_dist,
-        ),
-        gear1=GearProfileGeometry(
-            profile=gear1_profile_data[0],
-            teeth=int(gear1_profile_data[1]),
-            pitch_angle=float(gear1_profile_data[2]),
-            alignment_angle=float(gear1_profile_data[3]),
-            undercut_status=_describe_undercut(gear1_profile_data[4]),
-        ),
-        gear2=GearProfileGeometry(
-            profile=gear2_profile_data[0],
-            teeth=int(gear2_profile_data[1]),
-            pitch_angle=float(gear2_profile_data[2]),
-            alignment_angle=float(gear2_profile_data[3]),
-            undercut_status=_describe_undercut(gear2_profile_data[4]),
-        ),
+        analysis=GearPairAnalysis(contact_ratio=contact_ratio, center_distance=center_dist),
+        gear1=geometry('driver'),
+        gear2=geometry('driven'),
     )
