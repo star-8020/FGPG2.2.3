@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import os
+import subprocess
+import sys
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 from typing import Dict, Optional
@@ -16,7 +18,7 @@ except ImportError:
 from ..core import gear_core
 from ..core.models import FILLET_METHODS, GearPairParameters, GearSpec, SegmentationSettings
 from ..io import dxf_exporter, image_exporter
-from ..utils import config_manager
+from ..utils import config_manager, output_naming
 
 SPEC_FIELDS = [
     ("module_m", "Module, m", "[mm], (>0)"),
@@ -68,9 +70,9 @@ class GearApp(tk.Tk):
         # Otherwise Tk sizes the window to fit all widgets.
 
         self.vars: Dict[str, tk.StringVar] = {}
-        self.current_image_path: str = self.defaults.get('current_image_path', "Result1.png")
         self.logo_image: Optional[ImageTk.PhotoImage] = None
         self.result_image: Optional[ImageTk.PhotoImage] = None
+        self.last_output_base: Optional[str] = None
 
         main_frame = ttk.Frame(self, padding="10")
         main_frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
@@ -205,6 +207,7 @@ class GearApp(tk.Tk):
         ttk.Button(btn_frame, text="Load", command=self.load_params_from_file).pack(side="left", padx=5)
         ttk.Button(btn_frame, text="Run", command=self.run_calculation).pack(side="left", padx=5)
         ttk.Button(btn_frame, text="Save", command=self.save_params_to_file).pack(side="left", padx=5)
+        ttk.Button(btn_frame, text="Open Folder", command=self.open_working_directory).pack(side="left", padx=5)
         ttk.Button(btn_frame, text="Exit", command=self.quit).pack(side="left", padx=5)
 
         self.status_var = tk.StringVar(value="Welcome to the Fine Gear Profile Generator!")
@@ -290,7 +293,7 @@ class GearApp(tk.Tk):
         if not params:
             return
 
-        working_dir = config_manager.resolve_working_directory(self.vars['working_directory'].get())
+        working_dir = self._working_dir()
 
         try:
             os.makedirs(working_dir, exist_ok=True)
@@ -300,6 +303,9 @@ class GearApp(tk.Tk):
             gear1 = result.gear1
             gear2 = result.gear2
 
+            # Every run gets its own file names (gear data + time stamp), so
+            # earlier results are never overwritten.
+            base = output_naming.unique_basename(working_dir, params)
             image_path = image_exporter.export_gear_pair_to_image(
                 working_dir,
                 gear1,
@@ -310,28 +316,58 @@ class GearApp(tk.Tk):
                 params.driven.teeth,
                 params.center_x,
                 params.center_y,
-                filename=self.current_image_path,
+                filename=base + '.png',
             )
-
-            dxf_exporter.export_gear_pair_to_dxf(
+            dxf_path = dxf_exporter.export_gear_pair_to_dxf(
                 working_dir,
                 gear1,
                 gear2,
                 analysis.center_distance,
                 params.center_x,
                 params.center_y,
+                filename=base + '.dxf',
             )
+            output_naming.write_run_record(
+                os.path.join(working_dir, base + '.json'),
+                self._ui_values(),
+                result,
+                {'png': os.path.basename(image_path), 'dxf': os.path.basename(dxf_path)},
+            )
+            self.last_output_base = base
 
             self.vars['contact_ratio'].set(f"{analysis.contact_ratio:.4f}")
             self.vars['center_distance'].set(f"{analysis.center_distance:.4f} mm")
             self.status_var.set(
-                f"Run: OK. G1 Undercut: {gear1.undercut_status}. G2 Undercut: {gear2.undercut_status}"
+                f"Run: OK. Saved {base} (.png .dxf .json)\n"
+                f"G1 Undercut: {gear1.undercut_status}. G2 Undercut: {gear2.undercut_status}"
             )
             self.display_result_image(image_path)
 
         except Exception as exc:  # pragma: no cover - UI feedback
             messagebox.showerror("Calculation Error", f"An error occurred: {exc}")
             self.status_var.set(f"Run: Failed. {exc}")
+
+    def _working_dir(self) -> str:
+        return config_manager.resolve_working_directory(self.vars['working_directory'].get())
+
+    def _ui_values(self) -> Dict[str, str]:
+        """Current input values (without results and the working directory)."""
+        skip = {'working_directory', 'contact_ratio', 'center_distance'}
+        return {key: var.get() for key, var in self.vars.items() if key not in skip}
+
+    def open_working_directory(self) -> None:
+        """Open the result folder in the system file browser."""
+        working_dir = self._working_dir()
+        os.makedirs(working_dir, exist_ok=True)
+        try:
+            if sys.platform.startswith('win'):
+                os.startfile(working_dir)  # type: ignore[attr-defined]
+            elif sys.platform == 'darwin':
+                subprocess.Popen(['open', working_dir])
+            else:
+                subprocess.Popen(['xdg-open', working_dir])
+        except OSError as exc:  # pragma: no cover - depends on the desktop
+            messagebox.showerror("Open Folder", f"Could not open {working_dir}: {exc}")
 
     def display_result_image(self, img_path: str) -> None:
         """Show the generated preview image, if possible."""
@@ -351,29 +387,48 @@ class GearApp(tk.Tk):
         except Exception as exc:  # pragma: no cover - UI feedback
             self.status_var.set(f"Error displaying image: {exc}")
 
-    def save_params_to_file(self) -> None:
-        """Persist current UI parameters to disk."""
+    def save_params_to_file(self, path: Optional[str] = None) -> None:
+        """Save the current inputs to a parameter file chosen by the user."""
 
-        working_dir = config_manager.resolve_working_directory(self.vars['working_directory'].get())
-        data_to_save = {key: var.get() for key, var in self.vars.items() if key != 'working_directory'}
-        success, message = config_manager.save_params(working_dir, data_to_save)
+        if path is None:
+            working_dir = self._working_dir()
+            os.makedirs(working_dir, exist_ok=True)
+            suggested = "FGPG_params.json"
+            params = self._params_from_ui()
+            if params is not None:
+                suggested = f"FGPG_{output_naming.describe_parameters(params)}_params.json"
+            path = filedialog.asksaveasfilename(
+                title="Save parameters",
+                initialdir=working_dir,
+                initialfile=suggested,
+                defaultextension=".json",
+                filetypes=[("FGPG parameters", "*.json"), ("All files", "*.*")],
+            )  # the dialog itself asks before overwriting an existing file
+            if not path:
+                return
+        success, message = config_manager.save_params(path, self._ui_values())
         self.status_var.set(message)
         if not success:
             messagebox.showerror("Save Error", message)
 
-    def load_params_from_file(self) -> None:
-        """Populate UI fields from a saved parameter file."""
+    def load_params_from_file(self, path: Optional[str] = None) -> None:
+        """Load inputs from a parameter file or from a result's .json record."""
 
-        working_dir = config_manager.resolve_working_directory(self.vars['working_directory'].get())
-        success, data_or_error = config_manager.load_params(working_dir)
+        if path is None:
+            path = filedialog.askopenfilename(
+                title="Load parameters",
+                initialdir=self._working_dir(),
+                filetypes=[("FGPG parameters / results", "*.json *.dat"), ("All files", "*.*")],
+            )
+            if not path:
+                return
+        success, data_or_error = config_manager.load_params(path)
         if success and isinstance(data_or_error, dict):
-            if 'shaper_teeth_n0' in data_or_error:  # key used by FGPG 2.2.x files
-                data_or_error.setdefault('shaper_n0', data_or_error.pop('shaper_teeth_n0'))
             for key, value in data_or_error.items():
                 if key in self.vars:
                     self.vars[key].set(value)
             self._toggle_shaper_widgets()
-            self.status_var.set("Load: OK")
+            self.status_var.set(f"Loaded {os.path.basename(path)}")
         else:
             messagebox.showerror("Load Error", data_or_error)
             self.status_var.set(f"Load failed: {data_or_error}")

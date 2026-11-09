@@ -20,13 +20,14 @@ from typing import Optional
 from .core import gear_core
 from .core.models import FILLET_METHODS, ShaperCutterParameters
 from .io import dxf_exporter, image_exporter
-from .utils import config_manager
+from .utils import config_manager, output_naming
 
 
 def run_headless_mode(
     output_dir: Optional[str] = None,
     fillet_method: Optional[str] = None,
     cutter_teeth: Optional[int] = None,
+    name: Optional[str] = None,
 ) -> int:
     """Generate the default gear pair without a GUI.
 
@@ -35,6 +36,8 @@ def run_headless_mode(
             ``config.json``; relative paths are resolved against the project root.
         fillet_method: Overrides ``root_fillet_method`` from the configuration.
         cutter_teeth: Overrides the shaper cutter tooth count.
+        name: Base name of the output files.  By default a unique name with the
+            gear data and a time stamp is used, so earlier results are kept.
 
     Returns:
         Process exit code (0 on success).
@@ -65,6 +68,7 @@ def run_headless_mode(
 
         result = gear_core.generate_gear_pair(params)
         analysis = result.analysis
+        base = name or output_naming.unique_basename(working_dir, params)
 
         image_path = image_exporter.export_gear_pair_to_image(
             working_dir,
@@ -76,6 +80,7 @@ def run_headless_mode(
             params.driven.teeth,
             params.center_x,
             params.center_y,
+            filename=base + '.png',
         )
         dxf_path = dxf_exporter.export_gear_pair_to_dxf(
             working_dir,
@@ -84,6 +89,14 @@ def run_headless_mode(
             analysis.center_distance,
             params.center_x,
             params.center_y,
+            filename=base + '.dxf',
+        )
+        record_path = os.path.join(working_dir, base + '.json')
+        output_naming.write_run_record(
+            record_path,
+            output_naming.inputs_from_parameters(params),
+            result,
+            {'png': os.path.basename(image_path), 'dxf': os.path.basename(dxf_path)},
         )
     except Exception as exc:  # report any failure as a non-zero exit code
         print(f"An error occurred during the headless run: {exc}", file=sys.stderr)
@@ -96,6 +109,7 @@ def run_headless_mode(
     print(f"Gear 2 undercut : {result.gear2.undercut_status}")
     print(f"Wrote {image_path}")
     print(f"Wrote {dxf_path}")
+    print(f"Wrote {record_path}")
     return 0
 
 
@@ -112,11 +126,14 @@ def main(argv: Optional[list[str]] = None) -> None:
                         help='Headless: root fillet method (overrides config.json).')
     parser.add_argument('--cutter-teeth', type=int,
                         help='Headless: shaper cutter tooth count (overrides config.json).')
+    parser.add_argument('--name',
+                        help='Headless: base name of the output files '
+                             '(default: gear data + time stamp, never overwrites).')
 
     args = parser.parse_args(argv)
 
     if args.headless:
-        sys.exit(run_headless_mode(args.output_dir, args.fillet_method, args.cutter_teeth))
+        sys.exit(run_headless_mode(args.output_dir, args.fillet_method, args.cutter_teeth, args.name))
 
     try:
         import tkinter as tk

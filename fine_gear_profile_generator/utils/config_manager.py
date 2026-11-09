@@ -34,7 +34,6 @@ FALLBACK_DEFAULTS = {
     'seg_root_r': 15,
     'root_fillet_method': 'rack_trochoid',
     'working_directory': './result/',
-    'current_image_path': 'Result1.png'
 }
 
 SHAPER_FALLBACK_DEFAULTS = {
@@ -185,31 +184,43 @@ def resolve_working_directory(path: str) -> str:
     return os.path.normpath(os.path.join(os.path.dirname(get_config_path()), path))
 
 
-def save_params(working_dir: str, params_dict: Dict[str, object]) -> Tuple[bool, str]:
-    """Persist UI parameters to ``Inputs.dat`` in the specified directory."""
+def save_params(path: str, params_dict: Dict[str, object]) -> Tuple[bool, str]:
+    """Save GUI parameter values as JSON to ``path``."""
 
-    os.makedirs(working_dir, exist_ok=True)
-    filepath = os.path.join(working_dir, 'Inputs.dat')
     try:
-        with open(filepath, 'w', encoding='utf-8') as file:
-            json.dump(params_dict, file, indent=4)
-        return True, f"Parameters saved to {filepath}"
+        directory = os.path.dirname(path)
+        if directory:
+            os.makedirs(directory, exist_ok=True)
+        with open(path, 'w', encoding='utf-8') as file:
+            json.dump(params_dict, file, indent=4, ensure_ascii=False)
+        return True, f"Parameters saved to {path}"
     except OSError as error:
         return False, f"Error saving parameters: {error}"
 
 
-def load_params(working_dir: str) -> Tuple[bool, Dict[str, object] | str]:
-    """Load parameters from ``Inputs.dat`` within the given directory."""
+def load_params(path: str) -> Tuple[bool, Dict[str, object] | str]:
+    """Load GUI parameter values from ``path``.
 
-    filepath = os.path.join(working_dir, 'Inputs.dat')
-    if not os.path.exists(filepath):
-        return False, f"File not found: {filepath}"
+    Accepts a parameter file written by *Save* (including the old
+    ``Inputs.dat``) and the ``.json`` record written next to every result,
+    whose values are stored under ``"inputs"``.
+    """
+
+    if not os.path.exists(path):
+        return False, f"File not found: {path}"
 
     try:
-        with open(filepath, 'r', encoding='utf-8') as file:
+        with open(path, 'r', encoding='utf-8') as file:
             loaded_data = json.load(file)
-        return True, loaded_data
     except json.JSONDecodeError:
-        return False, f"Error: The file {filepath} is not a valid JSON file."
+        return False, f"Error: The file {path} is not a valid JSON file."
     except OSError as error:
         return False, f"Failed to load parameters: {error}"
+
+    if not isinstance(loaded_data, dict):
+        return False, f"Error: The file {path} does not contain FGPG parameters."
+    if isinstance(loaded_data.get('inputs'), dict):
+        loaded_data = loaded_data['inputs']
+    if 'shaper_teeth_n0' in loaded_data:  # key used by FGPG 2.2.x files
+        loaded_data.setdefault('shaper_n0', loaded_data.pop('shaper_teeth_n0'))
+    return True, loaded_data
